@@ -14,13 +14,6 @@ func (c *CPU) nop(opc *Opcode) int {
 	return opc.Cycles[0]
 }
 
-func (c *CPU) prefix(opc *Opcode) int {
-	c.nextOpcodePrefixed = true
-	c.pc += opc.Bytes
-
-	return opc.Cycles[0]
-}
-
 func (c *CPU) call(opc *Opcode) int {
 	cycles := opc.Cycles[0]
 	op0 := opc.Operands[0]
@@ -66,7 +59,52 @@ func (c *CPU) call(opc *Opcode) int {
 }
 
 func (c *CPU) ret(opc *Opcode) int {
+	if len(opc.Operands) == 0 {
+		c.pc = c.popValue()
+
+		return opc.Cycles[0]
+	} else {
+		op0 := opc.Operands[0]
+		switch op0.Name {
+		case "NC":
+			if !c.getCF() {
+				c.pc = c.popValue()
+				return opc.Cycles[1]
+			}
+		case "C":
+			if c.getCF() {
+				c.pc = c.popValue()
+				return opc.Cycles[1]
+			}
+		case "NZ":
+			if !c.getZF() {
+				c.pc = c.popValue()
+				return opc.Cycles[1]
+			}
+		case "Z":
+			if c.getZF() {
+				c.pc = c.popValue()
+				return opc.Cycles[1]
+			}
+		}
+	}
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) reti(opc *Opcode) int {
+	// TODO: interrupts
 	c.pc = c.popValue()
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) rst(opc *Opcode) int {
+	c.pushValue(c.pc + opc.Bytes)
+
+	c.pc = uint16(lib.Must(strconv.ParseUint(opc.Operands[0].Name[1:], 16, 16)))
 
 	return opc.Cycles[0]
 }
@@ -74,16 +112,21 @@ func (c *CPU) ret(opc *Opcode) int {
 func (c *CPU) load(opc *Opcode) int {
 	op0 := opc.Operands[0]
 	op1 := opc.Operands[1]
+	v8 := uint8(0)
+	v16 := uint16(0)
 
-	switch op0.Name {
+	switch op1.Name {
 	case "A", "F", "B", "C", "D", "E", "H", "L":
-		switch op1.Name {
-		case "A", "F", "B", "C", "D", "E", "H", "L":
-			c.setOp(op0.Name, c.getOp(op1.Name))
-		case "n8":
-			c.setOp(op0.Name, c.Bus.Read(c.pc+1))
-		case "BC", "DE", "HL":
-			c.setOp(op0.Name, c.Bus.Read(c.getDOp(op1.Name)))
+		v8 = c.getOp(op1.Name)
+	case "n8":
+		v8 = c.Bus.Read(c.pc + 1)
+	case "n16":
+		v16 = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+	case "a16":
+		v8 = c.Bus.Read(uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1)))
+	case "BC", "DE", "HL":
+		if !op1.Immediate {
+			v8 = c.Bus.Read(c.getDOp(op1.Name))
 
 			if op1.Increment {
 				c.setDOp(op1.Name, c.getDOp(op1.Name)+1)
@@ -92,17 +135,27 @@ func (c *CPU) load(opc *Opcode) int {
 			if op1.Decrement {
 				c.setDOp(op1.Name, c.getDOp(op1.Name)-1)
 			}
-		case "a16":
-			c.a = c.Bus.Read(uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1)))
-		default:
-			panic("unimplemented load for " + op1.Name)
-		}
-	case "BC", "DE", "HL", "SP":
-		if op0.Immediate {
-			imm16 := uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
-			c.setDOp(op0.Name, imm16)
 		} else {
-			c.Bus.Write(c.getDOp(op0.Name), c.getOp(op1.Name))
+			v16 = c.getDOp(op1.Name)
+		}
+	case "SP":
+		if len(opc.Operands) == 3 {
+			v := int8(c.Bus.Read(c.pc + 1))
+			c.setFlags(false, false, (c.sp&0xF)+uint16(v&0xF) > 0xF, c.sp&0xFF+uint16(v)&0xFF > 0xFF)
+			v16 = c.sp + uint16(v)
+		} else {
+			v16 = c.sp
+		}
+	default:
+		panic("unsupported op1 for load: " + op1.Name)
+	}
+
+	switch op0.Name {
+	case "A", "F", "B", "C", "D", "E", "H", "L":
+		c.setOp(op0.Name, v8)
+	case "BC", "DE", "HL", "SP":
+		if !op0.Immediate {
+			c.Bus.Write(c.getDOp(op0.Name), v8)
 
 			if op0.Increment {
 				c.setDOp(op0.Name, c.getDOp(op0.Name)+1)
@@ -111,14 +164,16 @@ func (c *CPU) load(opc *Opcode) int {
 			if op0.Decrement {
 				c.setDOp(op0.Name, c.getDOp(op0.Name)-1)
 			}
+		} else {
+			c.setDOp(op0.Name, v16)
 		}
 	case "a16":
 		hi := uint16(c.Bus.Read(c.pc + 2))
 		lo := uint16(c.Bus.Read(c.pc + 1))
 
 		if op1.Name == "SP" {
-			c.Bus.Write(hi, uint8(c.sp>>8))
-			c.Bus.Write(lo, uint8(c.sp))
+			c.Bus.Write(hi<<8|lo, uint8(c.sp))
+			c.Bus.Write(hi<<8|lo+1, uint8(c.sp>>8))
 		}
 
 		if op1.Name == "A" {
@@ -189,7 +244,14 @@ func (c *CPU) dec(opc *Opcode) int {
 	}
 
 	if len(op0.Name) == 2 {
-		c.setDOp(op0.Name, c.getDOp(op0.Name)-1)
+		if op0.Immediate {
+			c.setDOp(op0.Name, c.getDOp(op0.Name)-1)
+		} else {
+			v := c.Bus.Read(c.getDOp(op0.Name))
+			res := v - 1
+			c.Bus.Write(c.getDOp(op0.Name), res)
+			c.setFlags(res == 0, true, v&0xF < v&0xF-1, c.getCF())
+		}
 	}
 
 	c.pc += opc.Bytes
@@ -198,16 +260,44 @@ func (c *CPU) dec(opc *Opcode) int {
 }
 
 func (c *CPU) jumpAbs(opc *Opcode) int {
-	var addr uint16
-
 	switch opc.Operands[0].Name {
 	case "a16":
-		addr = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+		c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+
+		return opc.Cycles[0]
+	case "HL":
+		c.pc = c.getDOp("HL")
+
+		return opc.Cycles[0]
+	case "NZ":
+		if !c.getZF() {
+			c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+
+			return opc.Cycles[1]
+		}
+	case "Z":
+		if c.getZF() {
+			c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+
+			return opc.Cycles[1]
+		}
+	case "NC":
+		if !c.getCF() {
+			c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+
+			return opc.Cycles[1]
+		}
+	case "C":
+		if c.getCF() {
+			c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+
+			return opc.Cycles[1]
+		}
 	default:
 		panic("unimplemented jump for " + opc.Operands[0].Name)
 	}
 
-	c.pc = addr
+	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -264,12 +354,38 @@ func (c *CPU) disableInterrupts(opc *Opcode) int {
 }
 
 func (c *CPU) add(opc *Opcode) int {
-	v := c.getOp(opc.Operands[1].Name)
-	res := c.a + v
+	op0 := opc.Operands[0]
+	op1 := opc.Operands[1]
 
-	c.setFlags(res == 0, false, (c.a&0xF)+(v&0xF) > 0xF, uint16(c.a)+uint16(v) > 0xFF)
+	if len(op0.Name) == 1 {
+		v := c.getOp(op1.Name)
+		cy := uint8(0)
 
-	c.a = res
+		if opc.Mnemonic == "ADC" && c.getCF() {
+			cy = 1
+		}
+
+		res := c.a + v + cy
+
+		c.setFlags(res == 0, false, (c.a&0xF)+(v&0xF+cy) > 0xF, uint16(c.a)+uint16(v)+uint16(cy) > 0xFF)
+
+		c.a = res
+	} else {
+		switch op0.Name {
+		case "HL":
+			v1 := c.getDOp(op0.Name)
+			v2 := c.getDOp(op1.Name)
+
+			c.setFlags(c.getZF(), false, uint32(v1&0xFFF)+uint32(v2&0xFFF) > 0xFFF, uint32(v1)+uint32(v2) > 0xFFFF)
+			c.setDOp(op0.Name, v1+v2)
+		case "SP":
+			v := int8(c.Bus.Read(c.pc + 1))
+			c.setFlags(false, false, (c.sp&0xF)+uint16(v&0xF) > 0xF, c.sp&0xFF+uint16(v)&0xFF > 0xFF)
+
+			c.sp += uint16(v)
+		}
+	}
+
 	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
@@ -277,9 +393,16 @@ func (c *CPU) add(opc *Opcode) int {
 
 func (c *CPU) sub(opc *Opcode) int {
 	v := c.getOp(opc.Operands[1].Name)
-	res := c.a - v
 
-	c.setFlags(res == 0, true, c.a&0xF < v&0xF, c.a < v)
+	cy := uint8(0)
+
+	if opc.Mnemonic == "SBC" && c.getCF() {
+		cy = 1
+	}
+
+	res := c.a - v - cy
+
+	c.setFlags(res == 0, true, c.a&0xF < v&0xF+cy, uint16(c.a&0xFF) < uint16(v&0xFF)+uint16(cy))
 
 	c.a = res
 	c.pc += opc.Bytes
@@ -296,7 +419,13 @@ func (c *CPU) push(opc *Opcode) int {
 }
 
 func (c *CPU) pop(opc *Opcode) int {
-	c.setDOp(opc.Operands[0].Name, c.popValue())
+	v := c.popValue()
+
+	if opc.Operands[0].Name == "AF" {
+		v &= 0xFFF0
+	}
+
+	c.setDOp(opc.Operands[0].Name, v)
 
 	c.pc += opc.Bytes
 
@@ -344,13 +473,96 @@ func (c *CPU) cp(opc *Opcode) int {
 	return opc.Cycles[0]
 }
 
+func (c *CPU) daa(opc *Opcode) int {
+	cy := c.getCF()
+	value := uint8(0)
+	res := uint8(0)
+
+	if c.getNF() {
+		if c.getHF() {
+			value += 0x06
+		}
+
+		if cy {
+			value += 0x60
+		}
+
+		res = c.a - value
+	} else {
+		if c.a&0x0F > 0x09 || c.getHF() {
+			value += 0x06
+		}
+
+		if (c.a+value)&0xF0 > 0x90 || cy || c.a > 0x99 {
+			value += 0x60
+			cy = true
+		}
+
+		res = c.a + value
+	}
+
+	c.setFlags(res == 0, c.getNF(), false, cy)
+
+	c.a = res
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) rra(opc *Opcode) int {
+	v := c.a
+
+	cy := uint8(0)
+	if c.getCF() {
+		cy = 1
+	}
+
+	sb := v & 0x1
+	res := v>>1 | cy<<7
+
+	c.a = res
+	c.setFlags(false, false, false, sb == 1)
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) cpl(opc *Opcode) int {
+	c.a = ^c.a
+	c.pc += opc.Bytes
+
+	c.setFlags(c.getZF(), true, true, c.getCF())
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) scf(opc *Opcode) int {
+	c.setFlags(c.getZF(), false, false, true)
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) ccf(opc *Opcode) int {
+	c.setFlags(c.getZF(), false, false, !c.getCF())
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
 // CB prefixed
 
-func (c *CPU) rlc(opc *Opcode) int {
+func (c *CPU) rr(opc *Opcode) int {
 	v := c.getOp(opc.Operands[0].Name)
 
-	sb := v & 0x80 >> 7
-	res := v<<1 | sb
+	cy := uint8(0)
+	if c.getCF() {
+		cy = 1
+	}
+
+	sb := v & 0x1
+	res := v>>1 | cy<<7
 
 	c.setOp(opc.Operands[0].Name, res)
 	c.setFlags(res == 0, false, false, sb == 1)
@@ -360,14 +572,122 @@ func (c *CPU) rlc(opc *Opcode) int {
 	return opc.Cycles[0]
 }
 
-func (c *CPU) srl(opc *Opcode) int {
-	v := c.getOp(opc.Operands[0].Name)
+func (c *CPU) rl(opc *Opcode) int {
+	v := uint8(0)
+	if opc.Mnemonic == "RLA" {
+		v = c.a
+	} else {
+		v = c.getOp(opc.Operands[0].Name)
+	}
+
+	cy := uint8(0)
+	if c.getCF() {
+		cy = 1
+	}
+
+	sb := v & 0x80 >> 7
+	res := v<<1 | cy
+
+	if opc.Mnemonic == "RLA" {
+		c.a = res
+		c.setFlags(false, false, false, sb == 1)
+	} else {
+		c.setOp(opc.Operands[0].Name, res)
+		c.setFlags(res == 0, false, false, sb == 1)
+	}
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) rlc(opc *Opcode) int {
+	v := uint8(0)
+	if opc.Mnemonic == "RLCA" {
+		v = c.a
+	} else {
+		v = c.getOp(opc.Operands[0].Name)
+	}
+
+	sb := v & 0x80 >> 7
+	res := v<<1 | sb
+
+	if opc.Mnemonic == "RLCA" {
+		c.a = res
+		c.setFlags(false, false, false, sb == 1)
+	} else {
+		c.setOp(opc.Operands[0].Name, res)
+		c.setFlags(res == 0, false, false, sb == 1)
+	}
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) rrc(opc *Opcode) int {
+	v := uint8(0)
+	if opc.Mnemonic == "RRCA" {
+		v = c.a
+	} else {
+		v = c.getOp(opc.Operands[0].Name)
+	}
 
 	sb := v & 0x1
-	res := v >> 1
+	res := v>>1 | sb<<7
+
+	if opc.Mnemonic == "RRCA" {
+		c.a = res
+		c.setFlags(false, false, false, sb == 1)
+	} else {
+		c.setOp(opc.Operands[0].Name, res)
+		c.setFlags(res == 0, false, false, sb == 1)
+	}
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) sla(opc *Opcode) int {
+	v := c.getOp(opc.Operands[0].Name)
+
+	sb := v & 0x80 >> 7
+	res := v << 1
 
 	c.setOp(opc.Operands[0].Name, res)
 	c.setFlags(res == 0, false, false, sb == 1)
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) srla(opc *Opcode) int {
+	v := c.getOp(opc.Operands[0].Name)
+
+	sb := v & 0x1
+	b7 := v & 0x80
+	res := v >> 1
+
+	if opc.Mnemonic == "SRA" {
+		res |= b7
+	}
+
+	c.setOp(opc.Operands[0].Name, res)
+	c.setFlags(res == 0, false, false, sb == 1)
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) swap(opc *Opcode) int {
+	v := c.getOp(opc.Operands[0].Name)
+	v = v<<4 | v>>4
+
+	c.setOp(opc.Operands[0].Name, v)
+	c.setFlags(v == 0, false, false, false)
 
 	c.pc += opc.Bytes
 
@@ -388,17 +708,17 @@ func (c *CPU) set(opc *Opcode) int {
 // Helpers
 
 func (c *CPU) pushValue(value uint16) {
+	c.sp--
 	c.Bus.Write(c.sp, uint8(value>>8))
 	c.sp--
 	c.Bus.Write(c.sp, uint8(value))
-	c.sp--
 }
 
 func (c *CPU) popValue() uint16 {
-	c.sp++
 	lo := c.Bus.Read(c.sp)
 	c.sp++
 	hi := c.Bus.Read(c.sp)
+	c.sp++
 
 	return uint16(hi)<<8 | uint16(lo)
 }

@@ -1,0 +1,47 @@
+name: Golang Integration
+
+on:
+  push:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/golang-integration.yaml"
+
+env:
+  GO_VERSION: "1.25"
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install go dependencies
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9
+        with:
+          version: v2.5
+
+      - name: Build
+        run: CGO_ENABLED=0 go build
+
+      - name: Run short tests
+        run: go test ./...

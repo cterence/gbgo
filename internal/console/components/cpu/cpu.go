@@ -26,8 +26,6 @@ type CPU struct {
 	l uint8
 
 	ime bool
-
-	nextOpcodePrefixed bool
 }
 
 func (c *CPU) Init() error {
@@ -57,11 +55,11 @@ func (c *CPU) Step() (int, error) {
 
 	var opcode Opcode
 
-	if c.nextOpcodePrefixed {
+	opcode = UnprefixedOpcodes[opcodeHex]
+
+	if opcode.Mnemonic == "PREFIX" {
+		opcodeHex := c.Bus.Read(c.pc + 1)
 		opcode = CBPrefixedOpcodes[opcodeHex]
-		c.nextOpcodePrefixed = false
-	} else {
-		opcode = UnprefixedOpcodes[opcodeHex]
 	}
 
 	var sb strings.Builder
@@ -176,13 +174,13 @@ func (c *CPU) getZF() bool {
 	return c.f>>7&0x1 == 1
 }
 
-// func (c *CPU) getNF() bool {
-// 	return c.f>>6&0x1 == 1
-// }
+func (c *CPU) getNF() bool {
+	return c.f>>6&0x1 == 1
+}
 
-// func (c *CPU) getHF() bool {
-// 	return c.f>>5&0x1 == 1
-// }
+func (c *CPU) getHF() bool {
+	return c.f>>5&0x1 == 1
+}
 
 func (c *CPU) getCF() bool {
 	return c.f>>4&0x1 == 1
