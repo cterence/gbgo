@@ -13,10 +13,21 @@ import (
 )
 
 func main() {
+	var (
+		stopCPUAfter int
+	)
+
 	cmd := &cli.Command{
 		Name:  "gbgo",
 		Usage: "gameboy emulator",
 		Flags: []cli.Flag{
+			&cli.IntFlag{
+				Name:        "stop-cpu-after",
+				Aliases:     []string{"s"},
+				Usage:       "stop CPU execution after N cycles",
+				Destination: &stopCPUAfter,
+			},
+
 			&cli.BoolFlag{
 				Name:    "pprof",
 				Aliases: []string{"p"},
@@ -43,7 +54,29 @@ func main() {
 				return err
 			}
 
-			return console.Run(ctx, romBytes)
+			return console.Run(ctx, romBytes, console.WithStopCPUAfter(stopCPUAfter))
+		},
+		Commands: []*cli.Command{
+			{
+				Name:    "disassemble",
+				Aliases: []string{"d"},
+				Usage:   "disassemble a rom",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					romPath := cmd.Args().First()
+
+					if romPath == "" {
+						fmt.Printf("error: no rom path given\n\n")
+						return cli.ShowSubcommandHelp(cmd)
+					}
+
+					romBytes, err := os.ReadFile(romPath)
+					if err != nil {
+						return err
+					}
+
+					return console.Disassemble(romBytes)
+				},
+			},
 		},
 	}
 

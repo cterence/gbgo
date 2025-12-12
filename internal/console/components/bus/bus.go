@@ -26,6 +26,11 @@ func (b *Bus) Read(addr uint16) uint8 {
 		return b.Cartridge.Read(addr)
 	}
 
+	// FIXME: for gameboy doctor
+	if addr == 0xFF44 {
+		return 0x90
+	}
+
 	return b.Memory.Read(addr)
 }
 

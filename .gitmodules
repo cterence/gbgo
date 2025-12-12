@@ -1,3 +1,9 @@
 [submodule "sub/gb-test-roms"]
 	path = sub/gb-test-roms
 	url = git@github.com:retrio/gb-test-roms.git
+[submodule "sub/gameboy-doctor"]
+	path = sub/gameboy-doctor
+	url = git@github.com:robert/gameboy-doctor.git
+[submodule "sub/gb-bootroms"]
+	path = sub/gb-bootroms
+	url = https://codeberg.org/ISSOtm/gb-bootroms.git

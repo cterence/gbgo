@@ -16,7 +16,7 @@ type Cartridge struct {
 
 func (c *Cartridge) Init(cartridgeSize int) error {
 	bankCount := (cartridgeSize / MAX_BANK_SIZE) - 1
-	fmt.Printf("[cartridge] non-0 bank count: %d\n", bankCount)
+	// fmt.Printf("[cartridge] non-0 bank count: %d\n", bankCount)
 
 	if bankCount <= 0 || bankCount > 0x200 {
 		return fmt.Errorf("unsupported bank count: %d", bankCount)

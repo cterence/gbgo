@@ -20,7 +20,7 @@ type Opcode struct {
 	Mnemonic  string            `json:"mnemonic"`
 	Cycles    []int             `json:"cycles"`
 	Operands  []Operand         `json:"operands"`
-	Bytes     int               `json:"bytes"`
+	Bytes     uint16            `json:"bytes"`
 	Immediate bool              `json:"immediate"`
 }
 
@@ -29,26 +29,17 @@ type Opcodes struct {
 	CBPrefixed map[string]Opcode `json:"cbprefixed"`
 }
 
-type OpcodeFunc func(*Opcode)
+type OpcodeFunc func(*Opcode) int
 
 var (
 	//go:embed opcodes.json
 	opcodes           []uint8
-	unprefixedOpcodes [256]Opcode
-	cbprefixedOpcodes [256]Opcode
+	UnprefixedOpcodes [256]Opcode
+	CBPrefixedOpcodes [256]Opcode
 )
 
-func (c *CPU) parseOpcodes() error {
+func ParseOpcodes() error {
 	instructions := Opcodes{}
-
-	opcodeFuncs := map[string]OpcodeFunc{
-		"NOP":    c.nop,
-		"PREFIX": c.prefix,
-		"RLC":    c.rlc,
-		"JP":     c.jump,
-		"LD":     c.load,
-		"INC":    c.inc,
-	}
 
 	err := json.Unmarshal(opcodes, &instructions)
 	if err != nil {
@@ -57,11 +48,42 @@ func (c *CPU) parseOpcodes() error {
 
 	for i := range 256 {
 		hex := fmt.Sprintf("0x%02X", i)
-		unprefixedOpcodes[i] = instructions.Unprefixed[hex]
-		unprefixedOpcodes[i].Func = opcodeFuncs[unprefixedOpcodes[i].Mnemonic]
-		cbprefixedOpcodes[i] = instructions.CBPrefixed[hex]
-		cbprefixedOpcodes[i].Func = opcodeFuncs[cbprefixedOpcodes[i].Mnemonic]
+		UnprefixedOpcodes[i] = instructions.Unprefixed[hex]
+		CBPrefixedOpcodes[i] = instructions.CBPrefixed[hex]
 	}
 
 	return nil
+}
+
+func (c *CPU) bindOpcodeFuncs() {
+	opcodeFuncs := map[string]OpcodeFunc{
+		"NOP":    c.nop,
+		"PREFIX": c.prefix,
+		"JP":     c.jumpAbs,
+		"JR":     c.jumpRel,
+		"LD":     c.load,
+		"INC":    c.inc,
+		"DEC":    c.dec,
+		"EI":     c.enableInterrupts,
+		"DI":     c.disableInterrupts,
+		"LDH":    c.loadH,
+		"CALL":   c.call,
+		"RET":    c.ret,
+		"ADD":    c.add,
+		"SUB":    c.sub,
+		"PUSH":   c.push,
+		"POP":    c.pop,
+		"AND":    c.and,
+		"OR":     c.or,
+		"XOR":    c.xor,
+		"CP":     c.cp,
+		"RLC":    c.rlc,
+		"SRL":    c.srl,
+		"SET":    c.set,
+	}
+
+	for i := range 256 {
+		UnprefixedOpcodes[i].Func = opcodeFuncs[UnprefixedOpcodes[i].Mnemonic]
+		CBPrefixedOpcodes[i].Func = opcodeFuncs[CBPrefixedOpcodes[i].Mnemonic]
+	}
 }

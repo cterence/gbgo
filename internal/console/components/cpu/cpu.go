@@ -25,58 +25,61 @@ type CPU struct {
 	h uint8
 	l uint8
 
+	ime bool
+
 	nextOpcodePrefixed bool
 }
 
 func (c *CPU) Init() error {
-	if err := c.parseOpcodes(); err != nil {
+	if err := ParseOpcodes(); err != nil {
 		return fmt.Errorf("failed to parse CPU opcodes: %w", err)
 	}
 
-	c.pc = 0
+	c.bindOpcodeFuncs()
+
+	// Registers after boot
+	c.pc = 0x0100
+	c.sp = 0xFFFE
+	c.a = 0x01
+	c.f = 0xB0
+	c.b = 0x00
+	c.c = 0x13
+	c.d = 0x00
+	c.e = 0xD8
+	c.h = 0x01
+	c.l = 0x4D
 
 	return nil
 }
 
-func (c *CPU) Step() error {
+func (c *CPU) Step() (int, error) {
 	opcodeHex := c.Bus.Read(c.pc)
 
 	var opcode Opcode
 
 	if c.nextOpcodePrefixed {
-		opcode = cbprefixedOpcodes[opcodeHex]
+		opcode = CBPrefixedOpcodes[opcodeHex]
 		c.nextOpcodePrefixed = false
 	} else {
-		opcode = unprefixedOpcodes[opcodeHex]
+		opcode = UnprefixedOpcodes[opcodeHex]
 	}
 
-	var opStrSb strings.Builder
+	var sb strings.Builder
 	for _, op := range opcode.Operands {
-		opStrSb.WriteString(" " + op.Name)
+		sb.WriteString(" " + op.Name)
 	}
 
-	opStr := opStrSb.String()
-
-	cb := ""
-	if c.nextOpcodePrefixed {
-		cb = "cb"
-	}
+	opStr := sb.String()
 
 	if opcode.Func == nil {
-		return fmt.Errorf("unimplemented opcode: 0x%s%02X %s%s (pc:%x)", cb, opcodeHex, opcode.Mnemonic, opStr, c.pc)
+		return 0, fmt.Errorf("unimplemented opcode: 0x%02X %s%s (pc:%x)", opcodeHex, opcode.Mnemonic, opStr, c.pc)
 	}
 
-	fmt.Printf("executing %s%02X %s%s (pc:%x)\n", cb, opcodeHex, opcode.Mnemonic, opStr, c.pc)
+	fmt.Printf("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n", c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
 
-	prevPC := c.pc
+	cycles := opcode.Func(&opcode)
 
-	opcode.Func(&opcode)
-
-	if c.pc == prevPC {
-		c.pc++
-	}
-
-	return nil
+	return cycles, nil
 }
 
 func (c *CPU) getOp(op string) uint8 {
@@ -97,7 +100,9 @@ func (c *CPU) getOp(op string) uint8 {
 		return c.h
 	case "L":
 		return c.l
-	case "[HL]":
+	case "n8":
+		return c.Bus.Read(c.pc + 1)
+	case "HL":
 		return c.Bus.Read(uint16(c.h)<<8 | uint16(c.l))
 	default:
 		panic("unsupported operand for getOp: " + op)
@@ -122,7 +127,7 @@ func (c *CPU) setOp(op string, value uint8) {
 		c.h = value
 	case "L":
 		c.l = value
-	case "[HL]":
+	case "HL":
 		c.Bus.Write(uint16(c.h)<<8|uint16(c.l), value)
 	default:
 		panic("unsupported operand for setOp: " + op)
@@ -167,9 +172,9 @@ func (c *CPU) setDOp(op string, value uint16) {
 	}
 }
 
-// func (c *CPU) getZF() bool {
-// 	return c.f>>7&0x1 == 1
-// }
+func (c *CPU) getZF() bool {
+	return c.f>>7&0x1 == 1
+}
 
 // func (c *CPU) getNF() bool {
 // 	return c.f>>6&0x1 == 1
