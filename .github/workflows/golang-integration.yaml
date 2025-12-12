@@ -43,5 +43,5 @@ jobs:
       - name: Build
         run: CGO_ENABLED=0 go build
 
-      - name: Run short tests
+      - name: Run tests
         run: go test ./...
