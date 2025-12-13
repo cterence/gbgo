@@ -11,6 +11,7 @@ const (
 )
 
 type Memory struct {
+	// TODO: real work RAM
 	ram [MEMORY_SIZE]uint8
 }
 

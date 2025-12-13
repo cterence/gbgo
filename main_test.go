@@ -5,8 +5,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/cterence/gbgo/internal/console/lib"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,8 +26,9 @@ func TestMain(m *testing.M) {
 func runCPUTest(t *testing.T, testFileName string) {
 	t.Parallel()
 
+	testNum := strings.Split(testFileName, "-")[0]
 	cmd1 := exec.Command(os.Args[0], "./sub/gb-test-roms/cpu_instrs/individual/"+testFileName)
-	cmd2 := exec.Command("./sub/gameboy-doctor/gameboy-doctor", "-", "cpu_instrs", string(testFileName[1]))
+	cmd2 := exec.Command("./sub/gameboy-doctor/gameboy-doctor", "-", "cpu_instrs", strconv.Itoa(lib.Must(strconv.Atoi(testNum))))
 
 	var err error
 

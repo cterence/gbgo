@@ -64,8 +64,8 @@ func (c *CPU) bindOpcodeFuncs() {
 		"LD":     c.load,
 		"INC":    c.inc,
 		"DEC":    c.dec,
-		"EI":     c.enableInterrupts,
-		"DI":     c.disableInterrupts,
+		"EI":     c.ei,
+		"DI":     c.di,
 		"LDH":    c.loadH,
 		"CALL":   c.call,
 		"RET":    c.ret,
@@ -97,7 +97,9 @@ func (c *CPU) bindOpcodeFuncs() {
 		"SRL":    c.srla,
 		"SRA":    c.srla,
 		"SWAP":   c.swap,
+		"BIT":    c.bit,
 		"SET":    c.set,
+		"RES":    c.res,
 	}
 
 	for i := range 256 {

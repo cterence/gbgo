@@ -139,12 +139,12 @@ func (c *CPU) load(opc *Opcode) int {
 			v16 = c.getDOp(op1.Name)
 		}
 	case "SP":
+		v16 = c.sp
+
 		if len(opc.Operands) == 3 {
 			v := int8(c.Bus.Read(c.pc + 1))
 			c.setFlags(false, false, (c.sp&0xF)+uint16(v&0xF) > 0xF, c.sp&0xFF+uint16(v)&0xFF > 0xFF)
-			v16 = c.sp + uint16(v)
-		} else {
-			v16 = c.sp
+			v16 += uint16(v)
 		}
 	default:
 		panic("unsupported op1 for load: " + op1.Name)
@@ -180,7 +180,7 @@ func (c *CPU) load(opc *Opcode) int {
 			c.Bus.Write(hi<<8|lo, c.a)
 		}
 	default:
-		panic("unimplemented load for " + op0.Name)
+		panic("unimplemented op0 for load: " + op0.Name)
 	}
 
 	c.pc += opc.Bytes
@@ -196,7 +196,7 @@ func (c *CPU) loadH(opc *Opcode) int {
 	case "a8":
 		c.Bus.Write(0xFF00|uint16(c.Bus.Read(c.pc+1)), c.a)
 	case "C":
-		c.Bus.Write(0xFF00|uint16(c.Bus.Read(uint16(c.c))), c.a)
+		c.Bus.Write(0xFF00|uint16(c.c), c.a)
 	case "A":
 		if op1.Name == "a8" {
 			c.a = c.Bus.Read(0xFF00 | uint16(c.Bus.Read(c.pc+1)))
@@ -225,7 +225,15 @@ func (c *CPU) inc(opc *Opcode) int {
 	}
 
 	if len(op0.Name) == 2 {
-		c.setDOp(op0.Name, c.getDOp(op0.Name)+1)
+		if op0.Immediate {
+			c.setDOp(op0.Name, c.getDOp(op0.Name)+1)
+		} else {
+			addr := c.getDOp(op0.Name)
+			v := c.Bus.Read(addr)
+			res := v + 1
+			c.Bus.Write(addr, res)
+			c.setFlags(res == 0, false, v&0xF+1 > 0xF, c.getCF())
+		}
 	}
 
 	c.pc += opc.Bytes
@@ -247,9 +255,10 @@ func (c *CPU) dec(opc *Opcode) int {
 		if op0.Immediate {
 			c.setDOp(op0.Name, c.getDOp(op0.Name)-1)
 		} else {
-			v := c.Bus.Read(c.getDOp(op0.Name))
+			addr := c.getDOp(op0.Name)
+			v := c.Bus.Read(addr)
 			res := v - 1
-			c.Bus.Write(c.getDOp(op0.Name), res)
+			c.Bus.Write(addr, res)
 			c.setFlags(res == 0, true, v&0xF < v&0xF-1, c.getCF())
 		}
 	}
@@ -339,14 +348,14 @@ func (c *CPU) jumpRel(opc *Opcode) int {
 	return cycles
 }
 
-func (c *CPU) enableInterrupts(opc *Opcode) int {
+func (c *CPU) ei(opc *Opcode) int {
 	c.ime = true
 	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
 
-func (c *CPU) disableInterrupts(opc *Opcode) int {
+func (c *CPU) di(opc *Opcode) int {
 	c.ime = false
 	c.pc += opc.Bytes
 
@@ -699,6 +708,33 @@ func (c *CPU) set(opc *Opcode) int {
 	op1 := opc.Operands[1]
 
 	c.setOp(op1.Name, c.getOp(op1.Name)|1<<lib.Must(strconv.Atoi(op0.Name)))
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) res(opc *Opcode) int {
+	op0 := opc.Operands[0]
+	op1 := opc.Operands[1]
+
+	c.setOp(op1.Name, c.getOp(op1.Name)&^(1<<lib.Must(strconv.Atoi(op0.Name))))
+
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
+func (c *CPU) bit(opc *Opcode) int {
+	op0 := opc.Operands[0]
+	op1 := opc.Operands[1]
+
+	bit := lib.Must(strconv.Atoi(op0.Name))
+	mask := uint8(1 << bit)
+	v := c.getOp(op1.Name)
+	res := v & mask >> bit
+
+	c.setFlags(res == 0, false, true, c.getCF())
 
 	c.pc += opc.Bytes
 
