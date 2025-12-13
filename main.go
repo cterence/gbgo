@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 
 	"github.com/cterence/gbgo/internal/console"
+	"github.com/cterence/gbgo/internal/log"
 	"github.com/urfave/cli/v3"
 )
 
@@ -36,8 +36,19 @@ func main() {
 				Usage:   "run pprof webserver on localhost:6060",
 				Action: func(_ context.Context, _ *cli.Command, _ bool) error {
 					go func() {
-						log.Println(http.ListenAndServe("localhost:6060", nil))
+						fmt.Println(http.ListenAndServe("localhost:6060", nil))
 					}()
+
+					return nil
+				},
+			},
+
+			&cli.BoolFlag{
+				Name:    "debug",
+				Aliases: []string{"d"},
+				Usage:   "print emulator debug logs",
+				Action: func(_ context.Context, _ *cli.Command, b bool) error {
+					log.DebugEnabled = b
 
 					return nil
 				},

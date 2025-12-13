@@ -13,8 +13,10 @@ import (
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
 	"github.com/cterence/gbgo/internal/console/components/cpu"
 	"github.com/cterence/gbgo/internal/console/components/memory"
+	"github.com/cterence/gbgo/internal/console/components/ppu"
 	"github.com/cterence/gbgo/internal/console/components/timer"
 	"github.com/cterence/gbgo/internal/console/components/ui"
+	"github.com/cterence/gbgo/internal/log"
 )
 
 const (
@@ -29,6 +31,7 @@ type console struct {
 	bus       *bus.Bus
 	timer     *timer.Timer
 	ui        *ui.UI
+	ppu       *ppu.PPU
 
 	cancel context.CancelFunc
 
@@ -72,6 +75,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 		bus:       &bus.Bus{},
 		timer:     &timer.Timer{},
 		ui:        &ui.UI{},
+		ppu:       &ppu.PPU{},
 		cancel:    cancel,
 	}
 
@@ -83,13 +87,16 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gb.bus.Cartridge = gb.cartridge
 	gb.bus.CPU = gb.cpu
 	gb.bus.Timer = gb.timer
+	gb.bus.PPU = gb.ppu
 	gb.timer.CPU = gb.cpu
 	gb.cpu.Bus = gb.bus
 	gb.cpu.Console = &gb
 	gb.ui.Console = &gb
 	gb.ui.Bus = gb.bus
+	gb.ui.PPU = gb.ppu
+	gb.ppu.Bus = gb.bus
 
-	err := gb.cartridge.Init(len(romBytes))
+	err := gb.cartridge.Init(romBytes[0x147], romBytes[0x148])
 	if err != nil {
 		return fmt.Errorf("failed to init cartridge: %w", err)
 	}
@@ -113,6 +120,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	}
 
 	gb.timer.Init()
+	gb.ppu.Init()
 
 	for i, b := range romBytes {
 		gb.cartridge.Load(uint32(i), b)
@@ -130,6 +138,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 			uiCycles += cycles
 			if !gb.headless && uiCycles >= CPU_FREQ/UI_FREQ {
+				gb.ppu.Step()
 				gb.ui.Step()
 
 				uiCycles -= CPU_FREQ / UI_FREQ
@@ -184,12 +193,12 @@ func Disassemble(romBytes []uint8) error {
 }
 
 func (gb *console) Shutdown() {
-	fmt.Println("[console] shutdown")
+	log.Debug("[console] shutdown")
 	gb.cancel()
 }
 
 func (gb *console) Stop() {
-	fmt.Println("[console] stop")
+	log.Debug("[console] stop")
 
 	gb.stopped = true
 }

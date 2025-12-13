@@ -2,6 +2,8 @@ package cartridge
 
 import (
 	"fmt"
+
+	"github.com/cterence/gbgo/internal/log"
 )
 
 const (
@@ -9,56 +11,55 @@ const (
 )
 
 type Cartridge struct {
-	banksN      [][MAX_BANK_SIZE]uint8
-	bank0       [MAX_BANK_SIZE]uint8
+	banks       [][MAX_BANK_SIZE]uint8
 	currentBank uint8
 }
 
-func (c *Cartridge) Init(cartridgeSize int) error {
-	bankCount := (cartridgeSize / MAX_BANK_SIZE) - 1
+func (c *Cartridge) Init(cartridgeType, romSize uint8) error {
+	c.currentBank = 1
+
+	bankCount := 1 << (romSize + 1)
 
 	if bankCount <= 0 || bankCount > 0x200 {
 		return fmt.Errorf("unsupported bank count: %d", bankCount)
 	}
 
-	c.banksN = make([][MAX_BANK_SIZE]uint8, bankCount)
+	c.banks = make([][MAX_BANK_SIZE]uint8, bankCount)
+
+	log.Debug("[cartridge] type: %d\n", cartridgeType)
+	log.Debug("[cartridge] bank count: %d\n", bankCount)
 
 	return nil
 }
 
 func (c *Cartridge) Read(addr uint16) uint8 {
 	if addr < MAX_BANK_SIZE {
-		return c.bank0[addr]
+		return c.banks[0][addr]
 	}
 
 	if addr >= MAX_BANK_SIZE && addr < MAX_BANK_SIZE*2 {
 		bankIndex := (addr / MAX_BANK_SIZE) - 1
 		bankAddr := addr - MAX_BANK_SIZE*(bankIndex+1)
 
-		return c.banksN[c.currentBank][bankAddr]
+		return c.banks[c.currentBank][bankAddr]
 	}
 
 	panic(fmt.Errorf("out of bounds cartridge read: %x", addr))
 }
 
 func (c *Cartridge) Write(addr uint16, value uint8) {
-	// TODO: implement registers writes and handlers, ex: https://gbdev.io/pandocs/MBC1.html
+	if addr >= 0x2000 && addr <= 0x3FFF {
+		if value == 0 {
+			value = 1
+		}
+
+		c.currentBank = value
+		log.Debug("[cartridge] selected bank: %x\n", value)
+	}
 }
 
 func (c *Cartridge) Load(addr uint32, value uint8) {
-	if addr < MAX_BANK_SIZE {
-		c.bank0[addr] = value
-
-		return
-	}
-
-	if addr >= MAX_BANK_SIZE {
-		bankIndex := (addr / MAX_BANK_SIZE) - 1
-		bankAddr := uint16(addr - MAX_BANK_SIZE*(bankIndex+1))
-		c.banksN[bankIndex][bankAddr] = value
-
-		return
-	}
-
-	panic(fmt.Errorf("out of bounds cartridge write: %x", addr))
+	bankIndex := (addr / MAX_BANK_SIZE)
+	bankAddr := uint16(addr - MAX_BANK_SIZE*bankIndex)
+	c.banks[bankIndex][bankAddr] = value
 }

@@ -1,8 +1,13 @@
 package bus
 
+import "github.com/cterence/gbgo/internal/log"
+
 const (
 	ROM_BANK_0_END = 0x3FFF
 	ROM_BANK_1_END = 0x7FFF
+
+	VRAM_START = 0x8000
+	VRAM_END   = 0x9FFF
 
 	DIV  = 0xFF04
 	TIMA = 0xFF05
@@ -12,31 +17,17 @@ const (
 	IE   = 0xFFFF
 )
 
-type cpu interface {
-	Read(addr uint16) uint8
-	Write(addr uint16, value uint8)
-}
-
-type timer interface {
-	Read(addr uint16) uint8
-	Write(addr uint16, value uint8)
-}
-
-type memory interface {
-	Read(addr uint16) uint8
-	Write(addr uint16, value uint8)
-}
-
-type cartridge interface {
+type rw interface {
 	Read(addr uint16) uint8
 	Write(addr uint16, value uint8)
 }
 
 type Bus struct {
-	Memory    memory
-	Cartridge cartridge
-	CPU       cpu
-	Timer     timer
+	Memory    rw
+	Cartridge rw
+	CPU       rw
+	Timer     rw
+	PPU       rw
 
 	gbDoctor bool
 }
@@ -60,9 +51,16 @@ func (b *Bus) Read(addr uint16) uint8 {
 		return b.Cartridge.Read(addr)
 	}
 
-	// FIXME: for gameboy doctor
+	if addr >= VRAM_START && addr <= VRAM_END {
+		return b.PPU.Read(addr)
+	}
+
 	if addr == 0xFF44 && b.gbDoctor {
 		return 0x90
+	}
+
+	if addr == 0xFF4D {
+		return 0xFF
 	}
 
 	if addr == DIV || addr == TIMA || addr == TMA || addr == TAC {
@@ -79,20 +77,26 @@ func (b *Bus) Read(addr uint16) uint8 {
 func (b *Bus) Write(addr uint16, value uint8) {
 	if addr <= ROM_BANK_1_END {
 		b.Cartridge.Write(addr, value)
+		return
+	}
 
+	if addr >= VRAM_START && addr <= VRAM_END {
+		b.PPU.Write(addr, value)
 		return
 	}
 
 	if addr == DIV || addr == TIMA || addr == TMA || addr == TAC {
 		b.Timer.Write(addr, value)
-
 		return
 	}
 
 	if addr == IFF || addr == IE {
 		b.CPU.Write(addr, value)
-
 		return
+	}
+
+	if addr == 0xFF46 {
+		log.Debug("DMA")
 	}
 
 	b.Memory.Write(addr, value)

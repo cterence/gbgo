@@ -3,14 +3,11 @@ package memory
 import "fmt"
 
 const (
-	VRAM_START = 0x8000
-	VRAM_END   = 0x9FFF
-	VRAM_SIZE  = VRAM_END - VRAM_START + 1
-
 	WRAM_START = 0xC000
 	WRAM_END   = 0xDFFF
 	WRAM_SIZE  = WRAM_END - WRAM_START + 1
 
+	// TODO: move to ppu ?
 	OAM_START = 0xFE00
 	OAM_END   = 0xFE9F
 	OAM_SIZE  = OAM_END - OAM_START + 1
@@ -25,7 +22,6 @@ const (
 )
 
 type Memory struct {
-	vram  [VRAM_SIZE]uint8
 	wram  [WRAM_SIZE]uint8
 	oam   [OAM_SIZE]uint8
 	ioTmp [IO_SIZE]uint8
@@ -33,10 +29,6 @@ type Memory struct {
 }
 
 func (m *Memory) Read(addr uint16) uint8 {
-	if addr >= VRAM_START && addr <= VRAM_END {
-		return m.vram[addr-VRAM_START]
-	}
-
 	if addr >= WRAM_START && addr <= WRAM_END {
 		return m.wram[addr-WRAM_START]
 	}
@@ -57,11 +49,6 @@ func (m *Memory) Read(addr uint16) uint8 {
 }
 
 func (m *Memory) Write(addr uint16, value uint8) {
-	if addr >= VRAM_START && addr <= VRAM_END {
-		m.vram[addr-VRAM_START] = value
-		return
-	}
-
 	if addr >= WRAM_START && addr <= WRAM_END {
 		m.wram[addr-WRAM_START] = value
 		return

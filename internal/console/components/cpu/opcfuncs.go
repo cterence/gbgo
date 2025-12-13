@@ -2,8 +2,6 @@ package cpu
 
 import (
 	"strconv"
-
-	"github.com/cterence/gbgo/internal/console/lib"
 )
 
 // Unprefixed
@@ -104,7 +102,12 @@ func (c *CPU) reti(opc *Opcode) int {
 func (c *CPU) rst(opc *Opcode) int {
 	c.pushValue(c.pc + opc.Bytes)
 
-	c.pc = uint16(lib.Must(strconv.ParseUint(opc.Operands[0].Name[1:], 16, 16)))
+	v, err := strconv.ParseUint(opc.Operands[0].Name[1:], 16, 16)
+	if err != nil {
+		panic(err)
+	}
+
+	c.pc = uint16(v)
 
 	return opc.Cycles[0]
 }
@@ -721,7 +724,12 @@ func (c *CPU) set(opc *Opcode) int {
 	op0 := opc.Operands[0]
 	op1 := opc.Operands[1]
 
-	c.setOp(op1.Name, c.getOp(op1.Name)|1<<lib.Must(strconv.Atoi(op0.Name)))
+	bit, err := strconv.Atoi(op0.Name)
+	if err != nil {
+		panic(err)
+	}
+
+	c.setOp(op1.Name, c.getOp(op1.Name)|1<<bit)
 
 	c.pc += opc.Bytes
 
@@ -732,7 +740,12 @@ func (c *CPU) res(opc *Opcode) int {
 	op0 := opc.Operands[0]
 	op1 := opc.Operands[1]
 
-	c.setOp(op1.Name, c.getOp(op1.Name)&^(1<<lib.Must(strconv.Atoi(op0.Name))))
+	bit, err := strconv.Atoi(op0.Name)
+	if err != nil {
+		panic(err)
+	}
+
+	c.setOp(op1.Name, c.getOp(op1.Name)&^(1<<bit))
 
 	c.pc += opc.Bytes
 
@@ -743,7 +756,11 @@ func (c *CPU) bit(opc *Opcode) int {
 	op0 := opc.Operands[0]
 	op1 := opc.Operands[1]
 
-	bit := lib.Must(strconv.Atoi(op0.Name))
+	bit, err := strconv.Atoi(op0.Name)
+	if err != nil {
+		panic(err)
+	}
+
 	mask := uint8(1 << bit)
 	v := c.getOp(op1.Name)
 	res := v & mask >> bit
