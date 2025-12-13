@@ -560,6 +560,13 @@ func (c *CPU) ccf(opc *Opcode) int {
 	return opc.Cycles[0]
 }
 
+func (c *CPU) halt(opc *Opcode) int {
+	c.halted = true
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
 // CB prefixed
 
 func (c *CPU) rr(opc *Opcode) int {

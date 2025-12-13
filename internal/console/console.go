@@ -9,6 +9,7 @@ import (
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
 	"github.com/cterence/gbgo/internal/console/components/cpu"
 	"github.com/cterence/gbgo/internal/console/components/memory"
+	"github.com/cterence/gbgo/internal/console/components/timer"
 )
 
 type console struct {
@@ -16,6 +17,9 @@ type console struct {
 	memory    *memory.Memory
 	cartridge *cartridge.Cartridge
 	bus       *bus.Bus
+	timer     *timer.Timer
+
+	cpuOptions []cpu.Option
 
 	stopCPUAfter int
 }
@@ -28,12 +32,19 @@ func WithStopCPUAfter(stopCPUAfter int) Option {
 	}
 }
 
+func WithGBDoctor(gbDoctor bool) Option {
+	return func(c *console) {
+		c.cpuOptions = append(c.cpuOptions, cpu.WithGBDoctor(gbDoctor))
+	}
+}
+
 func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gb := console{
 		cpu:       &cpu.CPU{},
 		memory:    &memory.Memory{},
 		cartridge: &cartridge.Cartridge{},
 		bus:       &bus.Bus{},
+		timer:     &timer.Timer{},
 	}
 
 	for _, o := range options {
@@ -43,6 +54,8 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gb.bus.Memory = gb.memory
 	gb.bus.Cartridge = gb.cartridge
 	gb.bus.CPU = gb.cpu
+	gb.bus.Timer = gb.timer
+	gb.timer.CPU = gb.cpu
 	gb.cpu.Bus = gb.bus
 
 	err := gb.cartridge.Init(len(romBytes))
@@ -50,23 +63,24 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 		return fmt.Errorf("failed to init cartridge: %w", err)
 	}
 
-	err = gb.cpu.Init()
+	err = gb.cpu.Init(gb.cpuOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to init CPU: %w", err)
 	}
 
-	// Load cartridge
+	gb.timer.Init()
+
 	for i, b := range romBytes {
 		gb.cartridge.Write(uint32(i), b)
 	}
-
-	// fmt.Println("[console] loaded cartridge")
 
 	cycles, totalCycles := 0, 0
 
 	for err == nil {
 		cycles, err = gb.cpu.Step()
 		totalCycles += cycles
+
+		gb.timer.Step(cycles)
 
 		if gb.stopCPUAfter > 0 && totalCycles > gb.stopCPUAfter {
 			err = fmt.Errorf("stopping CPU after %d cycles", gb.stopCPUAfter)

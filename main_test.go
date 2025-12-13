@@ -27,7 +27,7 @@ func runCPUTest(t *testing.T, testFileName string) {
 	t.Parallel()
 
 	testNum := strings.Split(testFileName, "-")[0]
-	cmd1 := exec.Command(os.Args[0], "./sub/gb-test-roms/cpu_instrs/individual/"+testFileName)
+	cmd1 := exec.Command(os.Args[0], "./sub/gb-test-roms/cpu_instrs/individual/"+testFileName, "--gbd")
 	cmd2 := exec.Command("./sub/gameboy-doctor/gameboy-doctor", "-", "cpu_instrs", strconv.Itoa(lib.Must(strconv.Atoi(testNum))))
 
 	var err error

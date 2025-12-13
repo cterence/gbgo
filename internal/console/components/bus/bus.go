@@ -3,10 +3,13 @@ package bus
 import "fmt"
 
 type cpu interface {
-	ReadIFF() uint8
-	WriteIFF(value uint8)
-	ReadIE() uint8
-	WriteIE(value uint8)
+	Read(addr uint16) uint8
+	Write(addr uint16, value uint8)
+}
+
+type timer interface {
+	Read(addr uint16) uint8
+	Write(addr uint16, value uint8)
 }
 
 type memory interface {
@@ -22,14 +25,19 @@ type Bus struct {
 	Memory    memory
 	Cartridge cartridge
 	CPU       cpu
+	Timer     timer
 }
 
 const (
 	ROM_BANK_0_END = 0x3FFF
 	ROM_BANK_1_END = 0x7FFF
 
-	IFF = 0xFF0F
-	IE  = 0xFFFF
+	DIV  = 0xFF04
+	TIMA = 0xFF05
+	TMA  = 0xFF06
+	TAC  = 0xFF07
+	IFF  = 0xFF0F
+	IE   = 0xFFFF
 )
 
 func (b *Bus) Read(addr uint16) uint8 {
@@ -42,12 +50,12 @@ func (b *Bus) Read(addr uint16) uint8 {
 		return 0x90
 	}
 
-	if addr == IFF {
-		return b.CPU.ReadIFF()
+	if addr == DIV || addr == TIMA || addr == TMA || addr == TAC {
+		return b.Timer.Read(addr)
 	}
 
-	if addr == IE {
-		return b.CPU.ReadIE()
+	if addr == IFF || addr == IE {
+		return b.CPU.Read(addr)
 	}
 
 	return b.Memory.Read(addr)
@@ -58,14 +66,14 @@ func (b *Bus) Write(addr uint16, value uint8) {
 		panic(fmt.Errorf("cannot write to cartridge addr: %x", addr))
 	}
 
-	if addr == IFF {
-		b.CPU.WriteIFF(value)
+	if addr == DIV || addr == TIMA || addr == TMA || addr == TAC {
+		b.Timer.Write(addr, value)
 
 		return
 	}
 
-	if addr == IE {
-		b.CPU.WriteIE(value)
+	if addr == IFF || addr == IE {
+		b.CPU.Write(addr, value)
 
 		return
 	}

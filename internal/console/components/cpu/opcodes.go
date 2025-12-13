@@ -81,6 +81,7 @@ func (c *CPU) bindOpcodeFuncs() {
 		"OR":     c.or,
 		"XOR":    c.xor,
 		"CP":     c.cp,
+		"HALT":   c.halt,
 		"DAA":    c.daa,
 		"RRA":    c.rra,
 		"RL":     c.rl,

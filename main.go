@@ -15,6 +15,7 @@ import (
 func main() {
 	var (
 		stopCPUAfter int
+		gbDoctor     bool
 	)
 
 	cmd := &cli.Command{
@@ -40,6 +41,13 @@ func main() {
 					return nil
 				},
 			},
+
+			&cli.BoolFlag{
+				Name:        "gbdoctor",
+				Aliases:     []string{"gbd"},
+				Usage:       "print gameboy-doctor debug logs",
+				Destination: &gbDoctor,
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			romPath := cmd.Args().First()
@@ -54,7 +62,12 @@ func main() {
 				return err
 			}
 
-			return console.Run(ctx, romBytes, console.WithStopCPUAfter(stopCPUAfter))
+			return console.Run(
+				ctx,
+				romBytes,
+				console.WithStopCPUAfter(stopCPUAfter),
+				console.WithGBDoctor(gbDoctor),
+			)
 		},
 		Commands: []*cli.Command{
 			{

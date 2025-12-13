@@ -28,13 +28,31 @@ type CPU struct {
 	imeScheduled bool
 	iff          uint8 // 0xFF0F
 	ie           uint8 // 0xFFFF
+
+	halted bool
+
+	gbDoctor bool
 }
+
+type Option func(*CPU)
 
 const (
 	INTERRUPTS_START_ADDR = 0x40
+	IFF                   = 0xFF0F
+	IE                    = 0xFFFF
 )
 
-func (c *CPU) Init() error {
+func WithGBDoctor(gbDoctor bool) Option {
+	return func(c *CPU) {
+		c.gbDoctor = gbDoctor
+	}
+}
+
+func (c *CPU) Init(options ...Option) error {
+	for _, o := range options {
+		o(c)
+	}
+
 	if err := ParseOpcodes(); err != nil {
 		return fmt.Errorf("failed to parse CPU opcodes: %w", err)
 	}
@@ -57,39 +75,69 @@ func (c *CPU) Init() error {
 }
 
 func (c *CPU) Step() (int, error) {
-	cycles := 0
+	cycles := 4
 
-	c.printGBDoctorLog()
+	if c.halted {
+		if c.ie&c.iff&0x1F != 0 { // Interrupt pending?
+			c.halted = false
+		}
+
+		return cycles, nil // Return base CPU cycle
+	}
+
+	if c.gbDoctor {
+		c.printGBDoctorLog()
+	}
+
+	if c.ime && (c.ie&c.iff) != 0 {
+		cycles = c.handleInterrupts()
+	}
+
+	opcode := c.getOpcode(c.Bus.Read(c.pc))
+	if opcode.Func == nil {
+		return 0, fmt.Errorf("nil opcode func: %v", opcode)
+	}
+
+	cycles += opcode.Func(opcode)
 
 	if c.imeScheduled {
 		c.ime = true
 		c.imeScheduled = false
 	}
 
-	if c.ime && (c.ie&c.iff) != 0 {
-		cycles += c.handleInterrupts()
-	}
-
-	opcode := c.getOpcode(c.Bus.Read(c.pc))
-	cycles += opcode.Func(opcode)
-
 	return cycles, nil
 }
 
-func (c *CPU) ReadIFF() uint8 {
-	return c.iff
+func (c *CPU) Read(addr uint16) uint8 {
+	if addr == IFF {
+		return c.iff
+	}
+
+	if addr == IE {
+		return c.ie
+	}
+
+	panic(fmt.Errorf("unsupported read on cpu: %x", addr))
 }
 
-func (c *CPU) WriteIFF(value uint8) {
-	c.iff = value
+func (c *CPU) Write(addr uint16, value uint8) {
+	if addr == IFF {
+		c.iff = value
+
+		return
+	}
+
+	if addr == IE {
+		c.ie = value
+
+		return
+	}
+
+	panic(fmt.Errorf("unsupported write on cpu: %x", addr))
 }
 
-func (c *CPU) ReadIE() uint8 {
-	return c.ie
-}
-
-func (c *CPU) WriteIE(value uint8) {
-	c.ie = value
+func (c *CPU) RequestInterrupt(code uint8) {
+	c.iff |= code
 }
 
 func (c *CPU) printGBDoctorLog() {
