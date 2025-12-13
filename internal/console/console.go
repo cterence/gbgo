@@ -3,13 +3,23 @@ package console
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
+	"github.com/Zyko0/go-sdl3/bin/binsdl"
 	"github.com/cterence/gbgo/internal/console/components/bus"
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
 	"github.com/cterence/gbgo/internal/console/components/cpu"
 	"github.com/cterence/gbgo/internal/console/components/memory"
 	"github.com/cterence/gbgo/internal/console/components/timer"
+	"github.com/cterence/gbgo/internal/console/components/ui"
+)
+
+const (
+	CPU_FREQ = 4194304
+	UI_FREQ  = 60
 )
 
 type console struct {
@@ -18,10 +28,16 @@ type console struct {
 	cartridge *cartridge.Cartridge
 	bus       *bus.Bus
 	timer     *timer.Timer
+	ui        *ui.UI
+
+	cancel context.CancelFunc
 
 	cpuOptions []cpu.Option
+	busOptions []bus.Option
 
 	stopCPUAfter int
+	headless     bool
+	stopped      bool
 }
 
 type Option func(*console)
@@ -35,16 +51,28 @@ func WithStopCPUAfter(stopCPUAfter int) Option {
 func WithGBDoctor(gbDoctor bool) Option {
 	return func(c *console) {
 		c.cpuOptions = append(c.cpuOptions, cpu.WithGBDoctor(gbDoctor))
+		c.busOptions = append(c.busOptions, bus.WithGBDoctor(gbDoctor))
+	}
+}
+
+func WithHeadless(headless bool) Option {
+	return func(c *console) {
+		c.headless = headless
 	}
 }
 
 func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
+	gbCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	gb := console{
 		cpu:       &cpu.CPU{},
 		memory:    &memory.Memory{},
 		cartridge: &cartridge.Cartridge{},
 		bus:       &bus.Bus{},
 		timer:     &timer.Timer{},
+		ui:        &ui.UI{},
+		cancel:    cancel,
 	}
 
 	for _, o := range options {
@@ -57,33 +85,62 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gb.bus.Timer = gb.timer
 	gb.timer.CPU = gb.cpu
 	gb.cpu.Bus = gb.bus
+	gb.cpu.Console = &gb
+	gb.ui.Console = &gb
+	gb.ui.Bus = gb.bus
 
 	err := gb.cartridge.Init(len(romBytes))
 	if err != nil {
 		return fmt.Errorf("failed to init cartridge: %w", err)
 	}
 
+	gb.bus.Init(gb.busOptions...)
+
 	err = gb.cpu.Init(gb.cpuOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to init CPU: %w", err)
 	}
 
+	if !gb.headless {
+		defer binsdl.Load().Unload()
+		defer gb.ui.Close()
+
+		if err := gb.ui.Init(); err != nil {
+			return fmt.Errorf("failed to init UI: %w", err)
+		}
+
+		trapSigInt(cancel)
+	}
+
 	gb.timer.Init()
 
 	for i, b := range romBytes {
-		gb.cartridge.Write(uint32(i), b)
+		gb.cartridge.Load(uint32(i), b)
 	}
 
-	cycles, totalCycles := 0, 0
+	cycles, totalCycles, uiCycles := 0, 0, 0
 
 	for err == nil {
-		cycles, err = gb.cpu.Step()
-		totalCycles += cycles
+		select {
+		default:
+			if !gb.stopped {
+				cycles, err = gb.cpu.Step()
+				gb.timer.Step(cycles)
+			}
 
-		gb.timer.Step(cycles)
+			uiCycles += cycles
+			if !gb.headless && uiCycles >= CPU_FREQ/UI_FREQ {
+				gb.ui.Step()
 
-		if gb.stopCPUAfter > 0 && totalCycles > gb.stopCPUAfter {
-			err = fmt.Errorf("stopping CPU after %d cycles", gb.stopCPUAfter)
+				uiCycles -= CPU_FREQ / UI_FREQ
+			}
+
+			totalCycles += cycles
+			if gb.stopCPUAfter > 0 && totalCycles > gb.stopCPUAfter {
+				err = fmt.Errorf("stopping CPU after %d cycles", gb.stopCPUAfter)
+			}
+		case <-gbCtx.Done():
+			return nil
 		}
 	}
 
@@ -124,4 +181,25 @@ func Disassemble(romBytes []uint8) error {
 	fmt.Print(sb.String())
 
 	return nil
+}
+
+func (gb *console) Shutdown() {
+	fmt.Println("[console] shutdown")
+	gb.cancel()
+}
+
+func (gb *console) Stop() {
+	fmt.Println("[console] stop")
+
+	gb.stopped = true
+}
+
+func trapSigInt(cancel context.CancelFunc) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-c
+		cancel()
+	}()
 }

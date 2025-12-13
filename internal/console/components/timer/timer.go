@@ -2,6 +2,15 @@ package timer
 
 import "fmt"
 
+const (
+	DIV  = 0xFF04
+	TIMA = 0xFF05
+	TMA  = 0xFF06
+	TAC  = 0xFF07
+
+	CPU_FREQ = 4194304
+)
+
 type cpu interface {
 	RequestInterrupt(code uint8)
 }
@@ -16,15 +25,6 @@ type Timer struct {
 	tma  uint8  // 0xFF06
 	tac  uint8  // 0xFF07
 }
-
-const (
-	DIV  = 0xFF04
-	TIMA = 0xFF05
-	TMA  = 0xFF06
-	TAC  = 0xFF07
-
-	CPU_FREQ = 4194304
-)
 
 var timaFreqs = []int{1024, 16, 64, 256}
 

@@ -9,8 +9,13 @@ type bus interface {
 	Write(addr uint16, value uint8)
 }
 
+type console interface {
+	Stop()
+}
+
 type CPU struct {
-	Bus bus
+	Bus     bus
+	Console console
 
 	pc uint16
 	sp uint16
@@ -28,9 +33,9 @@ type CPU struct {
 	imeScheduled bool
 	iff          uint8 // 0xFF0F
 	ie           uint8 // 0xFFFF
+	halted       bool
 
-	halted bool
-
+	// Emulator
 	gbDoctor bool
 }
 

@@ -16,6 +16,7 @@ func main() {
 	var (
 		stopCPUAfter int
 		gbDoctor     bool
+		headless     bool
 	)
 
 	cmd := &cli.Command{
@@ -48,6 +49,13 @@ func main() {
 				Usage:       "print gameboy-doctor debug logs",
 				Destination: &gbDoctor,
 			},
+
+			&cli.BoolFlag{
+				Name:        "headless",
+				Aliases:     []string{"hl"},
+				Usage:       "run without UI",
+				Destination: &headless,
+			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			romPath := cmd.Args().First()
@@ -67,6 +75,7 @@ func main() {
 				romBytes,
 				console.WithStopCPUAfter(stopCPUAfter),
 				console.WithGBDoctor(gbDoctor),
+				console.WithHeadless(headless),
 			)
 		},
 		Commands: []*cli.Command{

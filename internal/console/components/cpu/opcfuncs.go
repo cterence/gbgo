@@ -567,6 +567,13 @@ func (c *CPU) halt(opc *Opcode) int {
 	return opc.Cycles[0]
 }
 
+func (c *CPU) stop(opc *Opcode) int {
+	c.Console.Stop()
+	c.pc += opc.Bytes
+
+	return opc.Cycles[0]
+}
+
 // CB prefixed
 
 func (c *CPU) rr(opc *Opcode) int {
