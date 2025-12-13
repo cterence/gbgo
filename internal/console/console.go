@@ -42,6 +42,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 	gb.bus.Memory = gb.memory
 	gb.bus.Cartridge = gb.cartridge
+	gb.bus.CPU = gb.cpu
 	gb.cpu.Bus = gb.bus
 
 	err := gb.cartridge.Init(len(romBytes))

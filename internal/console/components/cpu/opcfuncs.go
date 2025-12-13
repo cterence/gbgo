@@ -96,7 +96,7 @@ func (c *CPU) ret(opc *Opcode) int {
 
 func (c *CPU) reti(opc *Opcode) int {
 	c.pc = c.popValue()
-	c.ime = true
+	c.imeScheduled = true
 
 	return opc.Cycles[0]
 }
@@ -349,7 +349,7 @@ func (c *CPU) jumpRel(opc *Opcode) int {
 }
 
 func (c *CPU) ei(opc *Opcode) int {
-	c.ime = true
+	c.imeScheduled = true
 	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
