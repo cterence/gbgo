@@ -95,8 +95,8 @@ func (c *CPU) ret(opc *Opcode) int {
 }
 
 func (c *CPU) reti(opc *Opcode) int {
-	// TODO: interrupts
 	c.pc = c.popValue()
+	c.ime = true
 
 	return opc.Cycles[0]
 }
