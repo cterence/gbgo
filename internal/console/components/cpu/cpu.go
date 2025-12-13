@@ -145,14 +145,14 @@ func (c *CPU) printGBDoctorLog() {
 }
 
 func (c *CPU) getOpcode(opcodeHex uint8) *Opcode {
-	opcode := UnprefixedOpcodes[opcodeHex]
+	opcode := &UnprefixedOpcodes[opcodeHex]
 
 	if opcode.Mnemonic == "PREFIX" {
 		opcodeHex = c.Bus.Read(c.pc + 1)
-		opcode = CBPrefixedOpcodes[opcodeHex]
+		opcode = &CBPrefixedOpcodes[opcodeHex]
 	}
 
-	return &opcode
+	return opcode
 }
 
 func (c *CPU) getOp(op string) uint8 {
