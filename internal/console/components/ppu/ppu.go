@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	WIDTH       = 144
-	HEIGHT      = 160
+	WIDTH       = 160
+	HEIGHT      = 144
 	PIXEL_BYTES = 4
 
 	LCDC = 0xFF40

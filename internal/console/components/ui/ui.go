@@ -30,8 +30,8 @@ type UI struct {
 }
 
 const (
-	WIDTH       = 144
-	HEIGHT      = 160
+	WIDTH       = 160
+	HEIGHT      = 144
 	PIXEL_BYTES = 4
 	SCALE       = 4
 
