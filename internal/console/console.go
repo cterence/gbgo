@@ -14,6 +14,7 @@ import (
 	"github.com/cterence/gbgo/internal/console/components/cpu"
 	"github.com/cterence/gbgo/internal/console/components/memory"
 	"github.com/cterence/gbgo/internal/console/components/ppu"
+	"github.com/cterence/gbgo/internal/console/components/serial"
 	"github.com/cterence/gbgo/internal/console/components/timer"
 	"github.com/cterence/gbgo/internal/console/components/ui"
 	"github.com/cterence/gbgo/internal/log"
@@ -32,11 +33,13 @@ type console struct {
 	timer     *timer.Timer
 	ui        *ui.UI
 	ppu       *ppu.PPU
+	serial    *serial.Serial
 
 	cancel context.CancelFunc
 
-	cpuOptions []cpu.Option
-	busOptions []bus.Option
+	cpuOptions    []cpu.Option
+	busOptions    []bus.Option
+	serialOptions []serial.Option
 
 	stopCPUAfter int
 	headless     bool
@@ -64,11 +67,18 @@ func WithHeadless(headless bool) Option {
 	}
 }
 
+func WithPrintSerial(printSerial bool) Option {
+	return func(c *console) {
+		c.serialOptions = append(c.serialOptions, serial.WithPrintSerial(printSerial))
+	}
+}
+
 func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gbCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	gb := console{
+		cancel:    cancel,
 		cpu:       &cpu.CPU{},
 		memory:    &memory.Memory{},
 		cartridge: &cartridge.Cartridge{},
@@ -76,25 +86,27 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 		timer:     &timer.Timer{},
 		ui:        &ui.UI{},
 		ppu:       &ppu.PPU{},
-		cancel:    cancel,
+		serial:    &serial.Serial{},
 	}
 
 	for _, o := range options {
 		o(&gb)
 	}
 
-	gb.bus.Memory = gb.memory
 	gb.bus.Cartridge = gb.cartridge
 	gb.bus.CPU = gb.cpu
-	gb.bus.Timer = gb.timer
+	gb.bus.Memory = gb.memory
 	gb.bus.PPU = gb.ppu
-	gb.timer.CPU = gb.cpu
+	gb.bus.Serial = gb.serial
+	gb.bus.Timer = gb.timer
 	gb.cpu.Bus = gb.bus
 	gb.cpu.Console = &gb
-	gb.ui.Console = &gb
-	gb.ui.Bus = gb.bus
-	gb.ui.PPU = gb.ppu
 	gb.ppu.Bus = gb.bus
+	gb.serial.CPU = gb.cpu
+	gb.timer.CPU = gb.cpu
+	gb.ui.Bus = gb.bus
+	gb.ui.Console = &gb
+	gb.ui.PPU = gb.ppu
 
 	err := gb.cartridge.Init(romBytes[0x147], romBytes[0x148])
 	if err != nil {
@@ -121,6 +133,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 	gb.timer.Init()
 	gb.ppu.Init()
+	gb.serial.Init(gb.serialOptions...)
 
 	for i, b := range romBytes {
 		gb.cartridge.Load(uint32(i), b)
@@ -143,6 +156,8 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 				uiCycles -= CPU_FREQ / UI_FREQ
 			}
+
+			gb.serial.Step()
 
 			totalCycles += cycles
 			if gb.stopCPUAfter > 0 && totalCycles > gb.stopCPUAfter {

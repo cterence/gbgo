@@ -17,6 +17,7 @@ func main() {
 		stopCPUAfter int
 		gbDoctor     bool
 		headless     bool
+		printSerial  bool
 	)
 
 	cmd := &cli.Command{
@@ -62,6 +63,13 @@ func main() {
 			},
 
 			&cli.BoolFlag{
+				Name:        "print-serial",
+				Aliases:     []string{"ps"},
+				Usage:       "print serial output to console",
+				Destination: &printSerial,
+			},
+
+			&cli.BoolFlag{
 				Name:        "headless",
 				Aliases:     []string{"hl"},
 				Usage:       "run without UI",
@@ -87,6 +95,7 @@ func main() {
 				console.WithStopCPUAfter(stopCPUAfter),
 				console.WithGBDoctor(gbDoctor),
 				console.WithHeadless(headless),
+				console.WithPrintSerial(printSerial),
 			)
 		},
 		Commands: []*cli.Command{

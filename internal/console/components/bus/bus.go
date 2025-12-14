@@ -9,6 +9,9 @@ const (
 	VRAM_START = 0x8000
 	VRAM_END   = 0x9FFF
 
+	EXTERNAL_RAM_START = 0xA000
+	EXTERNAL_RAM_END   = 0xBFFF
+
 	DIV  = 0xFF04
 	TIMA = 0xFF05
 	TMA  = 0xFF06
@@ -28,6 +31,7 @@ type Bus struct {
 	CPU       rw
 	Timer     rw
 	PPU       rw
+	Serial    rw
 
 	gbDoctor bool
 }
@@ -47,57 +51,42 @@ func (b *Bus) Init(options ...Option) {
 }
 
 func (b *Bus) Read(addr uint16) uint8 {
-	if addr <= ROM_BANK_1_END {
+	switch {
+	case addr <= ROM_BANK_1_END || (addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END):
 		return b.Cartridge.Read(addr)
-	}
-
-	if addr >= VRAM_START && addr <= VRAM_END {
+	case addr >= VRAM_START && addr <= VRAM_END:
 		return b.PPU.Read(addr)
-	}
-
-	if addr == 0xFF44 && b.gbDoctor {
+	case addr == 0xFF01 || addr == 0xFF02:
+		return b.Serial.Read(addr)
+	case addr == 0xFF44 && b.gbDoctor:
 		return 0x90
-	}
-
-	if addr == 0xFF4D {
+	// FIXME: needed for cpu_instrs to pass
+	case addr == 0xFF4D:
 		return 0xFF
-	}
-
-	if addr == DIV || addr == TIMA || addr == TMA || addr == TAC {
+	case addr == DIV || addr == TIMA || addr == TMA || addr == TAC:
 		return b.Timer.Read(addr)
-	}
-
-	if addr == IFF || addr == IE {
+	case addr == IFF || addr == IE:
 		return b.CPU.Read(addr)
+	default:
+		return b.Memory.Read(addr)
 	}
-
-	return b.Memory.Read(addr)
 }
 
 func (b *Bus) Write(addr uint16, value uint8) {
-	if addr <= ROM_BANK_1_END {
+	switch {
+	case addr <= ROM_BANK_1_END || (addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END):
 		b.Cartridge.Write(addr, value)
-		return
-	}
-
-	if addr >= VRAM_START && addr <= VRAM_END {
+	case addr >= VRAM_START && addr <= VRAM_END:
 		b.PPU.Write(addr, value)
-		return
-	}
-
-	if addr == DIV || addr == TIMA || addr == TMA || addr == TAC {
+	case addr == 0xFF01 || addr == 0xFF02:
+		b.Serial.Write(addr, value)
+	case addr == DIV || addr == TIMA || addr == TMA || addr == TAC:
 		b.Timer.Write(addr, value)
-		return
-	}
-
-	if addr == IFF || addr == IE {
+	case addr == IFF || addr == IE:
 		b.CPU.Write(addr, value)
-		return
-	}
-
-	if addr == 0xFF46 {
+	case addr == 0xFF46:
 		log.Debug("DMA")
+	default:
+		b.Memory.Write(addr, value)
 	}
-
-	b.Memory.Write(addr, value)
 }

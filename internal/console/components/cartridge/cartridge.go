@@ -8,11 +8,16 @@ import (
 
 const (
 	MAX_BANK_SIZE = 0x4000
+
+	EXTERNAL_RAM_START = 0xA000
+	EXTERNAL_RAM_END   = 0xBFFF
+	EXTERNAL_RAM_SIZE  = EXTERNAL_RAM_END - EXTERNAL_RAM_START + 1
 )
 
 type Cartridge struct {
 	banks       [][MAX_BANK_SIZE]uint8
 	currentBank uint8
+	ram         [EXTERNAL_RAM_SIZE]uint8
 }
 
 func (c *Cartridge) Init(cartridgeType, romSize uint8) error {
@@ -33,28 +38,33 @@ func (c *Cartridge) Init(cartridgeType, romSize uint8) error {
 }
 
 func (c *Cartridge) Read(addr uint16) uint8 {
-	if addr < MAX_BANK_SIZE {
+	switch {
+	case addr < MAX_BANK_SIZE:
 		return c.banks[0][addr]
-	}
-
-	if addr >= MAX_BANK_SIZE && addr < MAX_BANK_SIZE*2 {
+	case addr >= MAX_BANK_SIZE && addr < MAX_BANK_SIZE*2:
 		bankIndex := (addr / MAX_BANK_SIZE) - 1
 		bankAddr := addr - MAX_BANK_SIZE*(bankIndex+1)
 
 		return c.banks[c.currentBank][bankAddr]
-	}
+	case addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END:
+		return c.ram[addr]
 
-	panic(fmt.Errorf("out of bounds cartridge read: %x", addr))
+	default:
+		panic(fmt.Errorf("out of bounds cartridge read: %x", addr))
+	}
 }
 
 func (c *Cartridge) Write(addr uint16, value uint8) {
-	if addr >= 0x2000 && addr <= 0x3FFF {
+	switch {
+	case addr >= 0x2000 && addr <= 0x3FFF:
 		if value == 0 {
 			value = 1
 		}
 
 		c.currentBank = value
 		log.Debug("[cartridge] selected bank: %x\n", value)
+	case addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END:
+		c.ram[addr-EXTERNAL_RAM_START] = value
 	}
 }
 

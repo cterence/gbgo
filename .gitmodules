@@ -7,3 +7,6 @@
 [submodule "sub/gb-bootroms"]
 	path = sub/gb-bootroms
 	url = https://codeberg.org/ISSOtm/gb-bootroms.git
+[submodule "sub/mooneye-test-suite"]
+	path = sub/mooneye-test-suite
+	url = git@github.com:Gekkio/mooneye-test-suite.git

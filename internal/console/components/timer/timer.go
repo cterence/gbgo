@@ -9,6 +9,8 @@ const (
 	TAC  = 0xFF07
 
 	CPU_FREQ = 4194304
+
+	INTERRUPT_CODE = 0x4
 )
 
 type cpu interface {
@@ -52,7 +54,7 @@ func (t *Timer) Step(cycles int) {
 
 		if t.tima == 0 {
 			t.tima = t.tma
-			t.CPU.RequestInterrupt(0x4)
+			t.CPU.RequestInterrupt(INTERRUPT_CODE)
 		}
 	}
 }

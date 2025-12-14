@@ -13,7 +13,6 @@ func (c *CPU) nop(opc *Opcode) int {
 }
 
 func (c *CPU) call(opc *Opcode) int {
-	cycles := opc.Cycles[0]
 	op0 := opc.Operands[0]
 
 	doCall := func(c *CPU) {
@@ -28,24 +27,28 @@ func (c *CPU) call(opc *Opcode) int {
 	case "NZ":
 		if !c.getZF() {
 			doCall(c)
+			return opc.Cycles[1]
 		} else {
 			c.pc += opc.Bytes
 		}
 	case "Z":
 		if c.getZF() {
 			doCall(c)
+			return opc.Cycles[1]
 		} else {
 			c.pc += opc.Bytes
 		}
 	case "NC":
 		if !c.getCF() {
 			doCall(c)
+			return opc.Cycles[1]
 		} else {
 			c.pc += opc.Bytes
 		}
 	case "C":
 		if c.getCF() {
 			doCall(c)
+			return opc.Cycles[1]
 		} else {
 			c.pc += opc.Bytes
 		}
@@ -53,7 +56,7 @@ func (c *CPU) call(opc *Opcode) int {
 		panic("unimplemented call for " + op0.Name)
 	}
 
-	return cycles
+	return opc.Cycles[0]
 }
 
 func (c *CPU) ret(opc *Opcode) int {

@@ -22,7 +22,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func runCPUTest(t *testing.T, testFileName string) {
+func runCPUTestGBD(t *testing.T, testFileName string) {
 	t.Parallel()
 
 	testNum := strings.Split(testFileName, "-")[0]
@@ -52,48 +52,71 @@ func runCPUTest(t *testing.T, testFileName string) {
 	assert.Contains(t, string(out), "SUCCESS")
 }
 
-func Test_CPU(t *testing.T) {
+func Test_Blargg_CPU_GBD(t *testing.T) {
 	t.Run("01-special.gb", func(t *testing.T) {
-		runCPUTest(t, "01-special.gb")
+		runCPUTestGBD(t, "01-special.gb")
 	})
 
 	t.Run("02-interrupts.gb", func(t *testing.T) {
-		runCPUTest(t, "02-interrupts.gb")
+		runCPUTestGBD(t, "02-interrupts.gb")
 	})
 
 	t.Run("03-op sp,hl.gb", func(t *testing.T) {
-		runCPUTest(t, "03-op sp,hl.gb")
+		runCPUTestGBD(t, "03-op sp,hl.gb")
 	})
 
 	t.Run("04-op r,imm.gb", func(t *testing.T) {
-		runCPUTest(t, "04-op r,imm.gb")
+		runCPUTestGBD(t, "04-op r,imm.gb")
 	})
 
 	t.Run("05-op rp.gb", func(t *testing.T) {
-		runCPUTest(t, "05-op rp.gb")
+		runCPUTestGBD(t, "05-op rp.gb")
 	})
 
 	t.Run("06-ld r,r.gb", func(t *testing.T) {
-		runCPUTest(t, "06-ld r,r.gb")
+		runCPUTestGBD(t, "06-ld r,r.gb")
 	})
 
 	t.Run("07-jr,jp,call,ret,rst.gb", func(t *testing.T) {
-		runCPUTest(t, "07-jr,jp,call,ret,rst.gb")
+		runCPUTestGBD(t, "07-jr,jp,call,ret,rst.gb")
 	})
 
 	t.Run("08-misc instrs.gb", func(t *testing.T) {
-		runCPUTest(t, "08-misc instrs.gb")
+		runCPUTestGBD(t, "08-misc instrs.gb")
 	})
 
 	t.Run("09-op r,r.gb", func(t *testing.T) {
-		runCPUTest(t, "09-op r,r.gb")
+		runCPUTestGBD(t, "09-op r,r.gb")
 	})
 
 	t.Run("10-bit ops.gb", func(t *testing.T) {
-		runCPUTest(t, "10-bit ops.gb")
+		runCPUTestGBD(t, "10-bit ops.gb")
 	})
 
 	t.Run("11-op a,(hl).gb", func(t *testing.T) {
-		runCPUTest(t, "11-op a,(hl).gb")
+		runCPUTestGBD(t, "11-op a,(hl).gb")
 	})
+}
+
+func Test_Blargg_CPU_Serial(t *testing.T) {
+	expected := []byte("cpu_instrs\n\n01:ok  02:ok  03:ok  04:ok  05:ok  06:ok  07:ok  08:ok  09:ok  10:ok  11:ok  \n\nPassed all tests")
+
+	cmd := exec.Command(os.Args[0], "./sub/gb-test-roms/cpu_instrs/cpu_instrs.gb", "--hl", "--ps")
+
+	cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
+
+	r, w := io.Pipe()
+	cmd.Stdout = w
+	assert.NoError(t, cmd.Start())
+
+	buf := make([]uint8, 1)
+
+	for i, want := range expected {
+		n, err := r.Read(buf)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, n)
+		assert.Equal(t, string(want), string(buf[0]), "wrong byte received at %d", i)
+	}
+
+	assert.NoError(t, cmd.Process.Kill())
 }
