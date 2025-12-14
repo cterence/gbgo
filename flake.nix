@@ -51,6 +51,9 @@
               air
               gotools
               gopls
+              rgbds
+              sameboy
+              wla-dx
               self.checks.${stdenv.hostPlatform.system}.pre-commit-check.enabledPackages
             ];
           };
