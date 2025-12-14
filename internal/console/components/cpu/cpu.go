@@ -64,17 +64,29 @@ func (c *CPU) Init(options ...Option) error {
 
 	c.bindOpcodeFuncs()
 
-	// Registers after boot
-	c.pc = 0x0100
-	c.sp = 0xFFFE
-	c.a = 0x01
-	c.f = 0xB0
-	c.b = 0x00
-	c.c = 0x13
-	c.d = 0x00
-	c.e = 0xD8
-	c.h = 0x01
-	c.l = 0x4D
+	c.pc = 0
+	c.sp = 0
+	c.a = 0
+	c.f = 0
+	c.b = 0
+	c.c = 0
+	c.d = 0
+	c.e = 0
+	c.h = 0
+	c.l = 0
+
+	if c.gbDoctor {
+		c.pc = 0x0100
+		c.sp = 0xFFFE
+		c.a = 0x01
+		c.f = 0xB0
+		c.b = 0x00
+		c.c = 0x13
+		c.d = 0x00
+		c.e = 0xD8
+		c.h = 0x01
+		c.l = 0x4D
+	}
 
 	return nil
 }

@@ -42,6 +42,8 @@ type PPU struct {
 	// oam         [OAM_SIZE]uint8
 	framebuffer [WIDTH * HEIGHT * 4]uint8
 
+	cycles int
+
 	lcdc uint8
 	stat uint8
 	scy  uint8
@@ -53,12 +55,23 @@ type PPU struct {
 	// TODO: rest of registers
 }
 
+func (p *PPU) Init() {
+	p.cycles = 0
+	p.lcdc = 0
+	p.stat = 0
+	p.scy = 0
+	p.scx = 0
+	p.ly = 0x90 // TODO: set to 0 when ly increment implemented
+	p.lyc = 0
+	p.dma = 0
+	p.bgp = 0
+}
+
 func (p *PPU) Read(addr uint16) uint8 {
 	if addr >= VRAM_START && addr <= VRAM_END {
 		return p.vram[addr-VRAM_START]
 	}
 
-	// TODO: addressing in bus
 	switch addr {
 	case LCDC:
 		return p.lcdc
@@ -109,31 +122,20 @@ func (p *PPU) Write(addr uint16, value uint8) {
 	}
 }
 
-func (p *PPU) Init() {
-	p.lcdc = 0
-	p.stat = 0
-	p.scy = 0
-	p.scx = 0
-	p.ly = 0
-	p.lyc = 0
-	p.dma = 0
-	p.bgp = 0
-}
-
 var bgTileMapAreas = [2]uint16{0x9800, 0x9C00}
 
 var palette = [4]uint32{
-	0xFF000000,
-	0xFF555555,
-	0xFFAAAAAA,
 	0xFFFFFFFF,
+	0xFFAAAAAA,
+	0xFF555555,
+	0xFF000000,
 }
 
 func (p *PPU) GetFramebuffer() [WIDTH * HEIGHT * 4]uint8 {
 	return p.framebuffer
 }
 
-func (p *PPU) Step() {
+func (p *PPU) Step(cycles int) {
 	bgTileMapArea := bgTileMapAreas[p.lcdc>>3&1]
 
 	bgWindowArea := TILE_BLOCK_1

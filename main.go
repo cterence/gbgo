@@ -14,23 +14,15 @@ import (
 
 func main() {
 	var (
-		stopCPUAfter int
-		gbDoctor     bool
-		headless     bool
-		printSerial  bool
+		gbDoctor    bool
+		headless    bool
+		printSerial bool
 	)
 
 	cmd := &cli.Command{
 		Name:  "gbgo",
 		Usage: "gameboy emulator",
 		Flags: []cli.Flag{
-			&cli.IntFlag{
-				Name:        "stop-cpu-after",
-				Aliases:     []string{"s"},
-				Usage:       "stop CPU execution after N cycles",
-				Destination: &stopCPUAfter,
-			},
-
 			&cli.BoolFlag{
 				Name:    "pprof",
 				Aliases: []string{"p"},
@@ -92,7 +84,6 @@ func main() {
 			return console.Run(
 				ctx,
 				romBytes,
-				console.WithStopCPUAfter(stopCPUAfter),
 				console.WithGBDoctor(gbDoctor),
 				console.WithHeadless(headless),
 				console.WithPrintSerial(printSerial),

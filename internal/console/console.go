@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Zyko0/go-sdl3/bin/binsdl"
 	"github.com/cterence/gbgo/internal/console/components/bus"
@@ -21,8 +22,10 @@ import (
 )
 
 const (
-	CPU_FREQ = 4194304
-	UI_FREQ  = 60
+	CPU_FREQ     = 4194304
+	FPS          = 60
+	FRAME_CYCLES = CPU_FREQ / FPS
+	FRAME_TIME   = time.Second / FPS
 )
 
 type console struct {
@@ -41,18 +44,11 @@ type console struct {
 	busOptions    []bus.Option
 	serialOptions []serial.Option
 
-	stopCPUAfter int
-	headless     bool
-	stopped      bool
+	headless bool
+	stopped  bool
 }
 
 type Option func(*console)
-
-func WithStopCPUAfter(stopCPUAfter int) Option {
-	return func(c *console) {
-		c.stopCPUAfter = stopCPUAfter
-	}
-}
 
 func WithGBDoctor(gbDoctor bool) Option {
 	return func(c *console) {
@@ -139,30 +135,30 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 		gb.cartridge.Load(uint32(i), b)
 	}
 
-	cycles, totalCycles, uiCycles := 0, 0, 0
+	totalCycles := uint64(0)
+	uiCycles := 0
 
 	for err == nil {
 		select {
 		default:
+			cycles := 0
+
 			if !gb.stopped {
 				cycles, err = gb.cpu.Step()
 				gb.timer.Step(cycles)
 			}
 
-			uiCycles += cycles
-			if !gb.headless && uiCycles >= CPU_FREQ/UI_FREQ {
-				gb.ppu.Step()
-				gb.ui.Step()
-
-				uiCycles -= CPU_FREQ / UI_FREQ
-			}
-
 			gb.serial.Step()
 
-			totalCycles += cycles
-			if gb.stopCPUAfter > 0 && totalCycles > gb.stopCPUAfter {
-				err = fmt.Errorf("stopping CPU after %d cycles", gb.stopCPUAfter)
+			uiCycles += cycles
+			if !gb.headless && uiCycles >= FRAME_CYCLES {
+				gb.ppu.Step(cycles)
+				gb.ui.Step()
+
+				uiCycles -= FRAME_CYCLES
 			}
+
+			totalCycles += uint64(cycles)
 		case <-gbCtx.Done():
 			return nil
 		}
