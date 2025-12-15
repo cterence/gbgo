@@ -3,6 +3,8 @@ package ppu
 import (
 	"encoding/binary"
 	"fmt"
+
+	"github.com/cterence/gbgo/internal/log"
 )
 
 const (
@@ -23,7 +25,10 @@ const (
 	VRAM_END   = 0x9FFF
 	VRAM_SIZE  = VRAM_END - VRAM_START + 1
 
-	OAM_SIZE      = 0xA0
+	OAM_START = 0xFE00
+	OAM_END   = 0xFE9F
+	OAM_SIZE  = OAM_END - OAM_START + 1
+
 	TILE_MAP_SIZE = 0x400
 
 	TILE_BLOCK_0 uint16 = 0x8000
@@ -37,9 +42,8 @@ type bus interface {
 type PPU struct {
 	Bus bus
 
-	vram [VRAM_SIZE]uint8
-	// TODO: oam
-	// oam         [OAM_SIZE]uint8
+	vram        [VRAM_SIZE]uint8
+	oam         [OAM_SIZE]uint8
 	framebuffer [WIDTH * HEIGHT * 4]uint8
 
 	cycles int
@@ -72,6 +76,10 @@ func (p *PPU) Read(addr uint16) uint8 {
 		return p.vram[addr-VRAM_START]
 	}
 
+	if addr >= OAM_START && addr <= OAM_END {
+		return p.oam[addr-OAM_START]
+	}
+
 	switch addr {
 	case LCDC:
 		return p.lcdc
@@ -100,6 +108,11 @@ func (p *PPU) Write(addr uint16, value uint8) {
 		return
 	}
 
+	if addr >= OAM_START && addr <= OAM_END {
+		p.oam[addr-OAM_START] = value
+		return
+	}
+
 	switch addr {
 	case LCDC:
 		p.lcdc = value
@@ -114,6 +127,9 @@ func (p *PPU) Write(addr uint16, value uint8) {
 	case LYC:
 		p.lyc = value
 	case DMA:
+		// TODO: separate component
+		log.Debug("[ppu] dma transfer requested")
+
 		p.dma = value
 	case BGP:
 		p.bgp = value

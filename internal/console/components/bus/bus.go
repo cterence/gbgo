@@ -2,6 +2,7 @@ package bus
 
 import (
 	_ "embed"
+	"fmt"
 
 	"github.com/cterence/gbgo/internal/log"
 )
@@ -15,6 +16,14 @@ const (
 
 	EXTERNAL_RAM_START = 0xA000
 	EXTERNAL_RAM_END   = 0xBFFF
+
+	WRAM_START = 0xC000
+	WRAM_END   = 0xDFFF
+	WRAM_SIZE  = WRAM_END - WRAM_START + 1
+
+	HRAM_START = 0xFF80
+	HRAM_END   = 0xFFFE
+	HRAM_SIZE  = HRAM_END - HRAM_START + 1
 
 	DIV  = 0xFF04
 	TIMA = 0xFF05
@@ -78,8 +87,13 @@ func (b *Bus) Read(addr uint16) uint8 {
 		return b.Timer.Read(addr)
 	case addr == IFF || addr == IE:
 		return b.CPU.Read(addr)
-	default:
+	case addr >= WRAM_START && addr <= WRAM_END || addr >= HRAM_START && addr <= HRAM_END:
 		return b.Memory.Read(addr)
+	case addr >= 0xFF10 && addr <= 0xFF3F:
+		// TODO: apu
+		return 0
+	default:
+		panic(fmt.Errorf("unsupported bus read: %x", addr))
 	}
 }
 
@@ -101,7 +115,11 @@ func (b *Bus) Write(addr uint16, value uint8) {
 		log.Debug("[bus] boot rom disabled\n")
 
 		b.bank = value
-	default:
+	case addr >= WRAM_START && addr <= WRAM_END || addr >= HRAM_START && addr <= HRAM_END:
 		b.Memory.Write(addr, value)
+	case addr >= 0xFF10 && addr <= 0xFF3F:
+		// TODO: apu
+	default:
+		panic(fmt.Errorf("unsupported bus write: %x", addr))
 	}
 }

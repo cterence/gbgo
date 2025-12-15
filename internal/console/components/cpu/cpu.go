@@ -53,6 +53,10 @@ func WithGBDoctor(gbDoctor bool) Option {
 	}
 }
 
+func (c *CPU) String() string {
+	return fmt.Sprintf("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
+}
+
 func (c *CPU) Init(options ...Option) error {
 	for _, o := range options {
 		o(c)
@@ -126,31 +130,25 @@ func (c *CPU) Step() (int, error) {
 }
 
 func (c *CPU) Read(addr uint16) uint8 {
-	if addr == IFF {
+	switch addr {
+	case IFF:
 		return c.iff
-	}
-
-	if addr == IE {
+	case IE:
 		return c.ie
+	default:
+		panic(fmt.Errorf("unsupported read on cpu: %x", addr))
 	}
-
-	panic(fmt.Errorf("unsupported read on cpu: %x", addr))
 }
 
 func (c *CPU) Write(addr uint16, value uint8) {
-	if addr == IFF {
+	switch addr {
+	case IFF:
 		c.iff = value
-
-		return
-	}
-
-	if addr == IE {
+	case IE:
 		c.ie = value
-
-		return
+	default:
+		panic(fmt.Errorf("unsupported write on cpu: %x", addr))
 	}
-
-	panic(fmt.Errorf("unsupported write on cpu: %x", addr))
 }
 
 func (c *CPU) RequestInterrupt(code uint8) {
@@ -158,7 +156,7 @@ func (c *CPU) RequestInterrupt(code uint8) {
 }
 
 func (c *CPU) printGBDoctorLog() {
-	fmt.Printf("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X\n", c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
+	fmt.Println(c)
 }
 
 func (c *CPU) getOpcode(opcodeHex uint8) *Opcode {

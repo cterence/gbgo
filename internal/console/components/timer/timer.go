@@ -60,45 +60,31 @@ func (t *Timer) Step(cycles int) {
 }
 
 func (t *Timer) Read(addr uint16) uint8 {
-	if addr == DIV {
+	switch addr {
+	case DIV:
 		return uint8(t.div >> 8) // Upper nibble increments every 256, so we have the 16384Hz frequency desired
-	}
-
-	if addr == TIMA {
+	case TIMA:
 		return t.tima
-	}
-
-	if addr == TMA {
+	case TMA:
 		return t.tma
-	}
-
-	if addr == TAC {
+	case TAC:
 		return t.tac
+	default:
+		panic(fmt.Errorf("unsupported read on timer: %x", addr))
 	}
-
-	panic(fmt.Errorf("unsupported read on timer: %x", addr))
 }
 
 func (t *Timer) Write(addr uint16, value uint8) {
-	if addr == DIV {
+	switch addr {
+	case DIV:
 		t.div = 0
-		return
-	}
-
-	if addr == TIMA {
+	case TIMA:
 		t.tima = value
-		return
-	}
-
-	if addr == TMA {
+	case TMA:
 		t.tma = value
-		return
-	}
-
-	if addr == TAC {
+	case TAC:
 		t.tac = value
-		return
+	default:
+		panic(fmt.Errorf("unsupported write on timer: %x", addr))
 	}
-
-	panic(fmt.Errorf("unsupported write on timer: %x", addr))
 }
