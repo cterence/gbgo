@@ -3,8 +3,6 @@ package ppu
 import (
 	"encoding/binary"
 	"fmt"
-
-	"github.com/cterence/gbgo/internal/log"
 )
 
 const (
@@ -18,7 +16,6 @@ const (
 	SCX  = 0xFF43
 	LY   = 0xFF44
 	LYC  = 0xFF45
-	DMA  = 0xFF46
 	BGP  = 0xFF47
 
 	VRAM_START = 0x8000
@@ -33,6 +30,15 @@ const (
 
 	TILE_BLOCK_0 uint16 = 0x8000
 	TILE_BLOCK_1 uint16 = 0x8800
+)
+
+type mode uint8
+
+const (
+	HBLANK mode = iota
+	VBLANK
+	OAM_SCAN
+	DRAW
 )
 
 type bus interface {
@@ -54,9 +60,10 @@ type PPU struct {
 	scx  uint8
 	ly   uint8
 	lyc  uint8
-	dma  uint8
 	bgp  uint8
-	// TODO: rest of registers
+
+	mode      mode
+	dmaActive bool
 }
 
 func (p *PPU) Init() {
@@ -67,75 +74,83 @@ func (p *PPU) Init() {
 	p.scx = 0
 	p.ly = 0x90 // TODO: set to 0 when ly increment implemented
 	p.lyc = 0
-	p.dma = 0
 	p.bgp = 0
 }
 
 func (p *PPU) Read(addr uint16) uint8 {
-	if addr >= VRAM_START && addr <= VRAM_END {
+	switch {
+	case addr >= VRAM_START && addr <= VRAM_END:
+		if p.mode == DRAW {
+			return 0xFF
+		}
+
 		return p.vram[addr-VRAM_START]
-	}
+	case addr >= OAM_START && addr <= OAM_END:
+		if p.dmaActive || (p.mode == OAM_SCAN || p.mode == DRAW) {
+			return 0xFF
+		}
 
-	if addr >= OAM_START && addr <= OAM_END {
 		return p.oam[addr-OAM_START]
-	}
-
-	switch addr {
-	case LCDC:
-		return p.lcdc
-	case STAT:
-		return p.stat
-	case SCY:
-		return p.scy
-	case SCX:
-		return p.scx
-	case LY:
-		return p.ly
-	case LYC:
-		return p.lyc
-	case DMA:
-		return p.dma
-	case BGP:
-		return p.bgp
 	default:
-		panic(fmt.Errorf("unsupported read for ppu: %x", addr))
+		switch addr {
+		case LCDC:
+			return p.lcdc
+		case STAT:
+			return p.stat
+		case SCY:
+			return p.scy
+		case SCX:
+			return p.scx
+		case LY:
+			return p.ly
+		case LYC:
+			return p.lyc
+		case BGP:
+			return p.bgp
+		default:
+			panic(fmt.Errorf("unsupported read for ppu: %x", addr))
+		}
 	}
 }
 
 func (p *PPU) Write(addr uint16, value uint8) {
-	if addr >= VRAM_START && addr <= VRAM_END {
-		p.vram[addr-VRAM_START] = value
-		return
-	}
-
-	if addr >= OAM_START && addr <= OAM_END {
-		p.oam[addr-OAM_START] = value
-		return
-	}
-
-	switch addr {
-	case LCDC:
-		p.lcdc = value
-	case STAT:
-		p.stat = value
-	case SCY:
-		p.scy = value
-	case SCX:
-		p.scx = value
-	case LY:
-		p.ly = value
-	case LYC:
-		p.lyc = value
-	case DMA:
-		// TODO: separate component
-		log.Debug("[ppu] dma transfer requested")
-
-		p.dma = value
-	case BGP:
-		p.bgp = value
+	switch {
+	case addr >= VRAM_START && addr <= VRAM_END:
+		if p.mode != DRAW {
+			p.vram[addr-VRAM_START] = value
+		}
+	case addr >= OAM_START && addr <= OAM_END:
+		if !p.dmaActive && p.mode != OAM_SCAN && p.mode != DRAW {
+			p.oam[addr-OAM_START] = value
+		}
 	default:
-		panic(fmt.Errorf("unsupported write for ppu: %x", addr))
+		switch addr {
+		case LCDC:
+			p.lcdc = value
+		case STAT:
+			p.stat = value
+		case SCY:
+			p.scy = value
+		case SCX:
+			p.scx = value
+		case LY:
+			p.ly = value
+		case LYC:
+			p.lyc = value
+		case BGP:
+			p.bgp = value
+		default:
+			panic(fmt.Errorf("unsupported write for ppu: %x", addr))
+		}
 	}
+}
+
+func (p *PPU) WriteOAM(addr uint16, value uint8) {
+	p.oam[addr-OAM_START] = value
+}
+
+func (p *PPU) ToggleDMAActive(active bool) {
+	p.dmaActive = active
 }
 
 var bgTileMapAreas = [2]uint16{0x9800, 0x9C00}

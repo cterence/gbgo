@@ -13,6 +13,7 @@ import (
 	"github.com/cterence/gbgo/internal/console/components/bus"
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
 	"github.com/cterence/gbgo/internal/console/components/cpu"
+	"github.com/cterence/gbgo/internal/console/components/dma"
 	"github.com/cterence/gbgo/internal/console/components/memory"
 	"github.com/cterence/gbgo/internal/console/components/ppu"
 	"github.com/cterence/gbgo/internal/console/components/serial"
@@ -37,6 +38,7 @@ type console struct {
 	ui        *ui.UI
 	ppu       *ppu.PPU
 	serial    *serial.Serial
+	dma       *dma.DMA
 
 	cancel context.CancelFunc
 
@@ -83,6 +85,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 		ui:        &ui.UI{},
 		ppu:       &ppu.PPU{},
 		serial:    &serial.Serial{},
+		dma:       &dma.DMA{},
 	}
 
 	for _, o := range options {
@@ -91,12 +94,15 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 	gb.bus.Cartridge = gb.cartridge
 	gb.bus.CPU = gb.cpu
+	gb.bus.DMA = gb.dma
 	gb.bus.Memory = gb.memory
 	gb.bus.PPU = gb.ppu
 	gb.bus.Serial = gb.serial
 	gb.bus.Timer = gb.timer
 	gb.cpu.Bus = gb.bus
 	gb.cpu.Console = &gb
+	gb.dma.Bus = gb.bus
+	gb.dma.PPU = gb.ppu
 	gb.ppu.Bus = gb.bus
 	gb.serial.CPU = gb.cpu
 	gb.timer.CPU = gb.cpu
@@ -149,6 +155,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 			}
 
 			gb.serial.Step()
+			gb.dma.Step(cycles)
 
 			uiCycles += cycles
 			if !gb.headless && uiCycles >= FRAME_CYCLES {

@@ -48,6 +48,7 @@ type Bus struct {
 	Timer     rw
 	PPU       rw
 	Serial    rw
+	DMA       rw
 
 	bank uint8
 
@@ -74,8 +75,10 @@ func (b *Bus) Read(addr uint16) uint8 {
 		return dmgBootRom[addr]
 	case addr <= ROM_BANK_1_END || (addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END):
 		return b.Cartridge.Read(addr)
-	case addr >= VRAM_START && addr <= VRAM_END || (addr >= 0xFF40 && addr <= 0xFF4B):
+	case addr >= VRAM_START && addr <= VRAM_END || (addr >= 0xFF40 && addr <= 0xFF4B && addr != 0xFF46):
 		return b.PPU.Read(addr)
+	case addr == 0xFF46:
+		return b.DMA.Read(addr)
 	case addr == 0xFF01 || addr == 0xFF02:
 		return b.Serial.Read(addr)
 	case addr == 0xFF44 && b.gbDoctor:
@@ -101,8 +104,10 @@ func (b *Bus) Write(addr uint16, value uint8) {
 	switch {
 	case addr <= ROM_BANK_1_END || (addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END):
 		b.Cartridge.Write(addr, value)
-	case addr >= VRAM_START && addr <= VRAM_END || (addr >= 0xFF40 && addr <= 0xFF4B):
+	case addr >= VRAM_START && addr <= VRAM_END || (addr >= 0xFF40 && addr <= 0xFF4B && addr != 0xFF46):
 		b.PPU.Write(addr, value)
+	case addr == 0xFF46:
+		b.DMA.Write(addr, value)
 	case addr == 0xFF01 || addr == 0xFF02:
 		b.Serial.Write(addr, value)
 	case addr == DIV || addr == TIMA || addr == TMA || addr == TAC:
