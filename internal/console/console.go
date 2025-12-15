@@ -104,6 +104,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gb.dma.Bus = gb.bus
 	gb.dma.PPU = gb.ppu
 	gb.ppu.Bus = gb.bus
+	gb.ppu.CPU = gb.cpu
 	gb.serial.CPU = gb.cpu
 	gb.timer.CPU = gb.cpu
 	gb.ui.Bus = gb.bus
@@ -156,10 +157,10 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 			gb.serial.Step()
 			gb.dma.Step(cycles)
+			gb.ppu.Step(cycles)
 
 			uiCycles += cycles
 			if !gb.headless && uiCycles >= FRAME_CYCLES {
-				gb.ppu.Step(cycles)
 				gb.ui.Step()
 
 				uiCycles -= FRAME_CYCLES

@@ -31,8 +31,8 @@ func (c *Cartridge) Init(cartridgeType, romSize uint8) error {
 
 	c.banks = make([][MAX_BANK_SIZE]uint8, bankCount)
 
-	log.Debug("[cartridge] type: %d\n", cartridgeType)
-	log.Debug("[cartridge] bank count: %d\n", bankCount)
+	log.Debug("[cartridge] type: %d", cartridgeType)
+	log.Debug("[cartridge] bank count: %d", bankCount)
 
 	return nil
 }
@@ -62,7 +62,7 @@ func (c *Cartridge) Write(addr uint16, value uint8) {
 		}
 
 		c.currentBank = value
-		log.Debug("[cartridge] selected bank: %x\n", value)
+		log.Debug("[cartridge] selected bank: %x", value)
 	case addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END:
 		c.ram[addr-EXTERNAL_RAM_START] = value
 	}

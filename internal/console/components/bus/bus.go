@@ -96,7 +96,9 @@ func (b *Bus) Read(addr uint16) uint8 {
 		// TODO: apu
 		return 0
 	default:
-		panic(fmt.Errorf("unsupported bus read: %x", addr))
+		fmt.Printf("unsupported bus read: %x\n", addr)
+
+		return 0
 	}
 }
 
@@ -117,7 +119,7 @@ func (b *Bus) Write(addr uint16, value uint8) {
 	case addr == 0xFF46:
 		log.Debug("DMA")
 	case addr == 0xFF50:
-		log.Debug("[bus] boot rom disabled\n")
+		log.Debug("[bus] boot rom disabled")
 
 		b.bank = value
 	case addr >= WRAM_START && addr <= WRAM_END || addr >= HRAM_START && addr <= HRAM_END:
@@ -125,6 +127,6 @@ func (b *Bus) Write(addr uint16, value uint8) {
 	case addr >= 0xFF10 && addr <= 0xFF3F:
 		// TODO: apu
 	default:
-		panic(fmt.Errorf("unsupported bus write: %x", addr))
+		fmt.Printf("unsupported bus write: %x\n", addr)
 	}
 }
