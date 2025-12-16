@@ -51,13 +51,6 @@ type console struct {
 
 type Option func(*console)
 
-func WithGBDoctor(gbDoctor bool) Option {
-	return func(c *console) {
-		c.cpuOptions = append(c.cpuOptions, cpu.WithGBDoctor(gbDoctor))
-		c.busOptions = append(c.busOptions, bus.WithGBDoctor(gbDoctor))
-	}
-}
-
 func WithHeadless(headless bool) Option {
 	return func(c *console) {
 		c.headless = headless
@@ -67,6 +60,13 @@ func WithHeadless(headless bool) Option {
 func WithPrintSerial(printSerial bool) Option {
 	return func(c *console) {
 		c.serialOptions = append(c.serialOptions, serial.WithPrintSerial(printSerial))
+	}
+}
+
+func WithBootROM(useBootROM bool) Option {
+	return func(c *console) {
+		c.busOptions = append(c.busOptions, bus.WithBootROM(useBootROM))
+		c.cpuOptions = append(c.cpuOptions, cpu.WithBootROM(useBootROM))
 	}
 }
 
@@ -150,7 +150,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 				gb.timer.Step(cycles)
 			}
 
-			gb.serial.Step()
+			gb.serial.Step(cycles)
 			gb.dma.Step(cycles)
 			gb.ppu.Step(cycles)
 
@@ -185,16 +185,7 @@ func Disassemble(romBytes []uint8) error {
 			opcode = cpu.CBPrefixedOpcodes[romBytes[pc]]
 		}
 
-		operands := ""
-
-		var operandsSb97 strings.Builder
-		for _, op := range opcode.Operands {
-			operandsSb97.WriteString(fmt.Sprintf(" %-3s", op.Name))
-		}
-
-		operands += operandsSb97.String()
-
-		sb.WriteString(fmt.Sprintf("%04X - %-4s%s\n", pc, opcode.Mnemonic, operands))
+		fmt.Printf("%04X - %s\n", pc, opcode)
 
 		pc += int(opcode.Bytes)
 	}

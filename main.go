@@ -14,9 +14,9 @@ import (
 
 func main() {
 	var (
-		gbDoctor    bool
 		headless    bool
 		printSerial bool
+		useBootROM  bool
 	)
 
 	cmd := &cli.Command{
@@ -48,10 +48,10 @@ func main() {
 			},
 
 			&cli.BoolFlag{
-				Name:        "gbdoctor",
-				Aliases:     []string{"gbd"},
-				Usage:       "print gameboy-doctor debug logs",
-				Destination: &gbDoctor,
+				Name:        "boot",
+				Aliases:     []string{"b"},
+				Usage:       "use bootrom",
+				Destination: &useBootROM,
 			},
 
 			&cli.BoolFlag{
@@ -84,9 +84,9 @@ func main() {
 			return console.Run(
 				ctx,
 				romBytes,
-				console.WithGBDoctor(gbDoctor),
 				console.WithHeadless(headless),
 				console.WithPrintSerial(printSerial),
+				console.WithBootROM(useBootROM),
 			)
 		},
 		Commands: []*cli.Command{

@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type Operand struct {
@@ -108,4 +109,17 @@ func (c *CPU) bindOpcodeFuncs() {
 		UnprefixedOpcodes[i].Func = opcodeFuncs[UnprefixedOpcodes[i].Mnemonic]
 		CBPrefixedOpcodes[i].Func = opcodeFuncs[CBPrefixedOpcodes[i].Mnemonic]
 	}
+}
+
+func (opc Opcode) String() string {
+	operands := ""
+
+	var sb strings.Builder
+	for _, op := range opc.Operands {
+		fmt.Fprintf(&sb, " %-3s", op.Name)
+	}
+
+	operands += sb.String()
+
+	return fmt.Sprintf("%-4s%s", opc.Mnemonic, operands)
 }

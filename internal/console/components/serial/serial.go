@@ -6,6 +6,8 @@ const (
 	SB = 0xFF01
 	SC = 0xFF02
 
+	SERIAL_CYCLES = 8192
+
 	INTERRUPT_CODE = 0x8
 )
 
@@ -15,6 +17,8 @@ type cpu interface {
 
 type Serial struct {
 	CPU cpu
+
+	cycles int
 
 	sb uint8
 	sc uint8
@@ -39,14 +43,20 @@ func (s *Serial) Init(options ...Option) {
 	}
 }
 
-func (s *Serial) Step() {
-	if s.sc&0x80 != 0 {
-		if s.print {
-			fmt.Print(string(s.sb))
+func (s *Serial) Step(cycles int) {
+	s.cycles += cycles
+
+	if s.cycles >= SERIAL_CYCLES {
+		if s.sc&0x80 != 0 {
+			if s.print {
+				fmt.Print(string(s.sb))
+			}
+
+			s.sc &= 0x7F
+			s.CPU.RequestInterrupt(INTERRUPT_CODE)
 		}
 
-		s.sc &= 0x7F
-		s.CPU.RequestInterrupt(INTERRUPT_CODE)
+		s.cycles -= SERIAL_CYCLES
 	}
 }
 

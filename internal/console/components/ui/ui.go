@@ -39,7 +39,7 @@ var palette = [4]rl.Color{
 func (ui *UI) Init() error {
 	rl.SetTraceLogLevel(rl.LogError)
 	rl.InitWindow(WIDTH*SCALE, HEIGHT*SCALE, "gbgo")
-	rl.SetTargetFPS(144)
+	rl.SetTargetFPS(60)
 
 	return nil
 }

@@ -55,15 +55,56 @@ type Bus struct {
 	DMA       rw
 
 	bank uint8
-
-	gbDoctor bool
 }
 
 type Option func(*Bus)
 
-func WithGBDoctor(gbDoctor bool) Option {
+func WithBootROM(useBootROM bool) Option {
 	return func(b *Bus) {
-		b.gbDoctor = gbDoctor
+		if !useBootROM {
+			// Simulate boot
+			b.bank = 1
+			b.Write(0xFF00, 0xCF)
+			b.Write(0xFF01, 0x00)
+			b.Write(0xFF02, 0x7E)
+			b.Write(0xFF04, 0xAB)
+			b.Write(0xFF05, 0x00)
+			b.Write(0xFF06, 0x00)
+			b.Write(0xFF07, 0xF8)
+			b.Write(0xFF0F, 0xE1)
+			b.Write(0xFF10, 0x80)
+			b.Write(0xFF11, 0xBF)
+			b.Write(0xFF12, 0xF3)
+			b.Write(0xFF14, 0xBF)
+			b.Write(0xFF16, 0x3F)
+			b.Write(0xFF17, 0x00)
+			b.Write(0xFF18, 0xFF)
+			b.Write(0xFF19, 0xBF)
+			b.Write(0xFF1A, 0x7F)
+			b.Write(0xFF1B, 0xFF)
+			b.Write(0xFF1C, 0x9F)
+			b.Write(0xFF1D, 0xBF)
+			b.Write(0xFF1E, 0xBF)
+			b.Write(0xFF20, 0xFF)
+			b.Write(0xFF21, 0x00)
+			b.Write(0xFF22, 0x00)
+			b.Write(0xFF23, 0xBF)
+			b.Write(0xFF24, 0x77)
+			b.Write(0xFF25, 0xF3)
+			b.Write(0xFF26, 0xF1)
+			b.Write(0xFF40, 0x91)
+			b.Write(0xFF41, 0x85)
+			b.Write(0xFF42, 0x00)
+			b.Write(0xFF43, 0x00)
+			b.Write(0xFF45, 0x00)
+			b.Write(0xFF47, 0xFC)
+			b.Write(0xFF46, 0xFF)
+			b.Write(0xFF48, 0xFF)
+			b.Write(0xFF49, 0xFF)
+			b.Write(0xFF4A, 0x0)
+			b.Write(0xFF4B, 0x0)
+			b.Write(0xFFFF, 0x0)
+		}
 	}
 }
 
@@ -75,7 +116,7 @@ func (b *Bus) Init(options ...Option) {
 
 func (b *Bus) Read(addr uint16) uint8 {
 	switch {
-	case addr <= 0xFF && b.bank == 0 && !b.gbDoctor:
+	case addr <= 0xFF && b.bank == 0:
 		return dmgBootRom[addr]
 	case addr <= ROM_BANK_1_END || (addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END):
 		return b.Cartridge.Read(addr)

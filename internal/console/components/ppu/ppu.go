@@ -5,6 +5,10 @@ import (
 )
 
 const (
+	OAM_CYCLES      = 80
+	CYCLES_PER_LINE = 456
+	LINES_PER_FRAME = 154
+
 	VBLANK_INTERRUPT_CODE = 0x1
 	STAT_INTERRUPT_CODE   = 0x2
 
@@ -205,84 +209,82 @@ func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
 }
 
 func (p *PPU) Step(cycles int) {
-	for range cycles / 4 {
-		p.cycles += 4
+	p.cycles += cycles
 
-		switch p.getPPUMode() {
-		case OAM_SCAN:
-			if p.cycles == 80 {
-				i := 0
-				p.objectCount = 0
+	switch p.getPPUMode() {
+	case OAM_SCAN:
+		if p.cycles >= OAM_CYCLES {
+			i := 0
+			p.objectCount = 0
 
-				for i < OAM_SIZE && p.objectCount < 10 {
-					y := p.oam[i] - 16
+			for i < OAM_SIZE && p.objectCount < 10 {
+				y := p.oam[i] - 16
 
-					if p.ly >= y && p.ly <= p.getObjHeight()+y {
-						p.objects[p.objectCount].y = p.oam[i]
-						p.objects[p.objectCount].x = p.oam[i+1]
-						p.objects[p.objectCount].tileIdx = p.oam[i+2]
-						p.objects[p.objectCount].attrs = p.oam[i+3]
+				if p.ly >= y && p.ly <= p.getObjHeight()+y {
+					p.objects[p.objectCount].y = p.oam[i]
+					p.objects[p.objectCount].x = p.oam[i+1]
+					p.objects[p.objectCount].tileIdx = p.oam[i+2]
+					p.objects[p.objectCount].attrs = p.oam[i+3]
 
-						p.objectCount++
-					}
-
-					i += 4
+					p.objectCount++
 				}
 
-				p.setPPUMode(DRAW)
+				i += 4
 			}
 
-		case DRAW:
-			if p.cycles == 288 {
-				y := p.ly
+			p.setPPUMode(DRAW)
+		}
 
-				for row := range WIDTH / 8 {
-					tileX := uint8(row*8) + p.scx
-					tileY := y + p.scy
-					tilePixelRow := p.getBGTilePixelRow(tileX, tileY)
+	case DRAW:
+		if p.cycles >= 288 {
+			y := p.ly
 
-					for b := range 8 {
-						x := row*8 + b
-						p.frameBuffer[x][y] = tilePixelRow[b]
-					}
+			for row := range WIDTH / 8 {
+				tileX := uint8(row*8) + p.scx
+				tileY := y + p.scy
+				tilePixelRow := p.getBGTilePixelRow(tileX, tileY)
+
+				for b := range 8 {
+					x := row*8 + b
+					p.frameBuffer[x][y] = tilePixelRow[b]
 				}
+			}
 
-				p.setPPUMode(HBLANK)
+			p.setPPUMode(HBLANK)
 
-				if p.stat&0x8 != 0 {
+			if p.stat&0x8 != 0 {
+				p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
+			}
+		}
+
+	case HBLANK:
+		if p.cycles >= CYCLES_PER_LINE {
+			p.cycles = 0
+
+			p.ly++
+			if p.ly < HEIGHT {
+				p.setPPUMode(OAM_SCAN)
+			} else {
+				p.setPPUMode(VBLANK)
+				p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
+
+				if p.stat&0x10 != 0 {
 					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
+		}
 
-		case HBLANK:
-			if p.cycles == 456 {
-				p.cycles = 0
+	case VBLANK:
+		if p.cycles >= CYCLES_PER_LINE {
+			p.cycles = 0
 
-				p.ly++
-				if p.ly < 144 {
-					p.setPPUMode(OAM_SCAN)
-				} else {
-					p.setPPUMode(VBLANK)
-					p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
+			p.ly++
+			if p.ly == LINES_PER_FRAME {
+				p.setPPUMode(OAM_SCAN)
 
-					if p.stat&0x10 != 0 {
-						p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
-					}
-				}
-			}
-
-		case VBLANK:
-			if p.cycles == 456 {
-				p.cycles = 0
-
-				p.ly++
-				if p.ly == 154 {
-					p.setPPUMode(OAM_SCAN)
-
-					p.ly = 0
-					if p.stat&0x20 != 0 {
-						p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
-					}
+				p.ly = 0
+				if p.stat&0x20 != 0 {
+					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
 		}
@@ -292,7 +294,6 @@ func (p *PPU) Step(cycles int) {
 		p.setLYEqLYC(1)
 
 		if p.stat&0x40 != 0 {
-			fmt.Println("stat interrupt")
 			p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 		}
 	} else {
