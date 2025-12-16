@@ -3,10 +3,7 @@ package console
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/cterence/gbgo/internal/console/components/bus"
@@ -98,6 +95,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gb.bus.PPU = gb.ppu
 	gb.bus.Serial = gb.serial
 	gb.bus.Timer = gb.timer
+	gb.bus.UI = gb.ui
 	gb.cpu.Bus = gb.bus
 	gb.cpu.Console = &gb
 	gb.dma.Bus = gb.bus
@@ -107,6 +105,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gb.serial.CPU = gb.cpu
 	gb.timer.CPU = gb.cpu
 	gb.ui.Bus = gb.bus
+	gb.ui.CPU = gb.cpu
 	gb.ui.Console = &gb
 	gb.ui.PPU = gb.ppu
 
@@ -123,11 +122,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	}
 
 	if !gb.headless {
-		if err := gb.ui.Init(); err != nil {
-			return fmt.Errorf("failed to init UI: %w", err)
-		}
-
-		trapSigInt(cancel)
+		gb.ui.Init()
 	}
 
 	gb.timer.Init()
@@ -204,14 +199,4 @@ func (gb *console) Stop() {
 	log.Debug("[console] stop")
 
 	gb.stopped = true
-}
-
-func trapSigInt(cancel context.CancelFunc) {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	go func() {
-		<-c
-		cancel()
-	}()
 }

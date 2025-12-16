@@ -53,6 +53,7 @@ type Bus struct {
 	PPU       rw
 	Serial    rw
 	DMA       rw
+	UI        rw
 
 	bank uint8
 }
@@ -136,9 +137,8 @@ func (b *Bus) Read(addr uint16) uint8 {
 		return b.Memory.Read(addr - ECHO_START + WRAM_START)
 	case addr >= UNUSED_START && addr <= UNUSED_END:
 		return 0xFF
-	// TODO: joypad
 	case addr == 0xFF00:
-		return 0xFF
+		return b.UI.Read(addr)
 	// TODO: apu
 	case addr >= 0xFF10 && addr <= 0xFF3F:
 		return 0xFF
@@ -168,8 +168,8 @@ func (b *Bus) Write(addr uint16, value uint8) {
 	case addr >= ECHO_START && addr <= ECHO_END:
 		b.Memory.Write(addr-ECHO_START+WRAM_START, value)
 	case addr >= UNUSED_START && addr <= UNUSED_END:
-	// TODO: joypad
 	case addr == 0xFF00:
+		b.UI.Write(addr, value)
 	// TODO: apu
 	case addr >= 0xFF10 && addr <= 0xFF3F:
 	default:
