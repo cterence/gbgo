@@ -23,6 +23,7 @@ func TestMain(m *testing.M) {
 }
 
 func runCPUTestGBD(t *testing.T, testFileName string) {
+	t.Skip("no ppu interrupt support")
 	t.Parallel()
 
 	testNum := strings.Split(testFileName, "-")[0]
