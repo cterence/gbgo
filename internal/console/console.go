@@ -24,7 +24,7 @@ import (
 const (
 	CPU_FREQ     = 4194304
 	FPS          = 60
-	FRAME_CYCLES = CPU_FREQ / FPS
+	FRAME_CYCLES = 70224
 	FRAME_TIME   = time.Second / FPS
 )
 
@@ -138,7 +138,6 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 		gb.cartridge.Load(uint32(i), b)
 	}
 
-	totalCycles := uint64(0)
 	uiCycles := 0
 
 	for err == nil {
@@ -161,8 +160,6 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 				uiCycles -= FRAME_CYCLES
 			}
-
-			totalCycles += uint64(cycles)
 		case <-gbCtx.Done():
 			return nil
 		}

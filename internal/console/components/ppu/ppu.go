@@ -199,9 +199,11 @@ func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
 
 func (p *PPU) Step(cycles int) {
 	for range cycles / 4 {
+		p.cycles += 4
+
 		switch p.getSTATMode() {
 		case OAM_SCAN:
-			if p.cycles == 0 {
+			if p.cycles == 80 {
 				i, objCount := 0, 0
 
 				for i < OAM_SIZE && objCount < 10 {
@@ -214,16 +216,12 @@ func (p *PPU) Step(cycles int) {
 
 					i += 4
 				}
-			}
 
-			if p.cycles == 80 {
 				p.setSTATMode(DRAW)
-			} else {
-				p.cycles += 4
 			}
 
 		case DRAW:
-			if p.cycles == 80 {
+			if p.cycles == 288 {
 				bgTileMapArea := bgTileMapAreas[p.lcdc>>3&1]
 
 				bgWindowArea := TILE_BLOCK_1
@@ -236,16 +234,12 @@ func (p *PPU) Step(cycles int) {
 				for i := range p.objects {
 					p.objects[i] = 0
 				}
-			}
 
-			if p.cycles == 288 {
 				p.setSTATMode(HBLANK)
 
 				if p.stat&0x8 != 0 {
 					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
-			} else {
-				p.cycles += 4
 			}
 
 		case HBLANK:
@@ -263,8 +257,6 @@ func (p *PPU) Step(cycles int) {
 						p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 					}
 				}
-			} else {
-				p.cycles += 4
 			}
 
 		case VBLANK:
@@ -280,45 +272,40 @@ func (p *PPU) Step(cycles int) {
 						p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 					}
 				}
-			} else {
-				p.cycles += 4
 			}
 		}
+	}
 
-		if p.ly == p.lyc {
-			if p.stat&0x40 != 0 {
-				p.setSTATLYC(1)
-				p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
-			}
-		} else {
-			p.setSTATLYC(0)
+	if p.ly == p.lyc {
+		if p.stat&0x40 != 0 {
+			p.setSTATLYC(1)
+			p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 		}
+	} else {
+		p.setSTATLYC(0)
 	}
 }
 
 func (p *PPU) setBGPixels(bgTileMapArea, bgWindowArea uint16) {
 	bgY := p.ly + p.scy
-	tileY := uint16(bgY / 8)
-	fineY := uint16(bgY % 8)
+	tileY := bgY / 8
+	fineY := bgY % 8
 
 	for row := range WIDTH / 8 {
-		tileIdx := p.vram[(bgTileMapArea+uint16(row)+tileY*32)-VRAM_START]
+		tilemapAddr := bgTileMapArea + uint16(row) + uint16(tileY)*32
+		tileIdx := p.vram[tilemapAddr-VRAM_START]
 
-		tileDataAddr := bgWindowArea + uint16(tileIdx)*16 + fineY*2
-		if bgWindowArea == TILE_BLOCK_1 {
-			tileDataAddr = 0x9000 + uint16(int16(int8(tileIdx))*16) + fineY*2
-		}
+		tileDataAddr := bgWindowArea + uint16(tileIdx)*16
 
-		tileLo := p.vram[tileDataAddr-VRAM_START]
-		tileHi := p.vram[tileDataAddr+1-VRAM_START]
+		tileLo := p.vram[(tileDataAddr+uint16(fineY)*2)-VRAM_START]
+		tileHi := p.vram[(tileDataAddr+uint16(fineY)*2+1)-VRAM_START]
 
 		for b := range 8 {
 			x := b + row*8
-
-			loPx := (tileLo >> (7 - b)) & 0x1 // Use b, not bgX%8
+			loPx := (tileLo >> (7 - b)) & 0x1
 			hiPx := (tileHi >> (7 - b)) & 0x1
-			pixel := hiPx<<1 | loPx
-
+			colorIdx := hiPx<<1 | loPx
+			pixel := (p.bgp >> (colorIdx * 2)) & 0x3
 			p.frameBuffer[x][p.ly] = pixel
 		}
 	}

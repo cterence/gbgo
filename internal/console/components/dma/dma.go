@@ -2,8 +2,6 @@ package dma
 
 import (
 	"fmt"
-
-	"github.com/cterence/gbgo/internal/log"
 )
 
 const (
@@ -47,8 +45,6 @@ func (d *DMA) Step(cycles int) {
 			d.PPU.ToggleDMAActive(false)
 			d.dmaActive = false
 
-			log.Debug("[dma] inactive")
-
 			return
 		}
 	}
@@ -69,7 +65,6 @@ func (d *DMA) Write(addr uint16, value uint8) {
 		d.dma = value
 		d.dmaActive = true
 		d.PPU.ToggleDMAActive(d.dmaActive)
-		log.Debug("[dma] active")
 	default:
 		panic(fmt.Errorf("unsupported write for dma: %x", addr))
 	}
