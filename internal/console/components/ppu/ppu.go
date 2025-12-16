@@ -35,7 +35,7 @@ const (
 	TILE_MAP_SIZE = 0x400
 
 	TILE_BLOCK_0 uint16 = 0x8000
-	TILE_BLOCK_1 uint16 = 0x8800
+	TILE_BLOCK_1 uint16 = 0x9000
 )
 
 type mode uint8
@@ -55,6 +55,13 @@ type cpu interface {
 	RequestInterrupt(code uint8)
 }
 
+type object struct {
+	y       uint8
+	x       uint8
+	tileIdx uint8
+	attrs   uint8
+}
+
 type PPU struct {
 	Bus bus
 	CPU cpu
@@ -63,9 +70,10 @@ type PPU struct {
 
 	frameBuffer [WIDTH][HEIGHT]uint8
 
-	vram    [VRAM_SIZE]uint8
-	oam     [OAM_SIZE]uint8
-	objects [10]uint8
+	vram        [VRAM_SIZE]uint8
+	oam         [OAM_SIZE]uint8
+	objects     [10]object
+	objectCount uint8
 
 	lcdc uint8
 	stat uint8
@@ -96,19 +104,19 @@ func (p *PPU) Init() {
 	p.wy = 0
 	p.wx = 0
 
-	p.setSTATMode(OAM_SCAN)
+	p.setPPUMode(OAM_SCAN)
 }
 
 func (p *PPU) Read(addr uint16) uint8 {
 	switch {
 	case addr >= VRAM_START && addr <= VRAM_END:
-		if p.getSTATMode() == DRAW {
+		if p.getPPUMode() == DRAW {
 			return 0xFF
 		}
 
 		return p.vram[addr-VRAM_START]
 	case addr >= OAM_START && addr <= OAM_END:
-		if p.dmaActive || (p.getSTATMode() == OAM_SCAN || p.getSTATMode() == DRAW) {
+		if p.dmaActive || (p.getPPUMode() == OAM_SCAN || p.getPPUMode() == DRAW) {
 			return 0xFF
 		}
 
@@ -146,11 +154,10 @@ func (p *PPU) Read(addr uint16) uint8 {
 func (p *PPU) Write(addr uint16, value uint8) {
 	switch {
 	case addr >= VRAM_START && addr <= VRAM_END:
-		if p.getSTATMode() != DRAW {
-			p.vram[addr-VRAM_START] = value
-		}
+		// TODO: prevent writes when in DRAW mode (produces jumbled pixels now...)
+		p.vram[addr-VRAM_START] = value
 	case addr >= OAM_START && addr <= OAM_END:
-		if !p.dmaActive && p.getSTATMode() != OAM_SCAN && p.getSTATMode() != DRAW {
+		if !p.dmaActive && p.getPPUMode() != OAM_SCAN && p.getPPUMode() != DRAW {
 			p.oam[addr-OAM_START] = value
 		}
 	default:
@@ -201,41 +208,46 @@ func (p *PPU) Step(cycles int) {
 	for range cycles / 4 {
 		p.cycles += 4
 
-		switch p.getSTATMode() {
+		switch p.getPPUMode() {
 		case OAM_SCAN:
 			if p.cycles == 80 {
-				i, objCount := 0, 0
+				i := 0
+				p.objectCount = 0
 
-				for i < OAM_SIZE && objCount < 10 {
+				for i < OAM_SIZE && p.objectCount < 10 {
 					y := p.oam[i] - 16
 
-					if p.ly >= y && p.ly <= p.objSize()+y {
-						p.objects[objCount] = uint8(i)
-						objCount++
+					if p.ly >= y && p.ly <= p.getObjHeight()+y {
+						p.objects[p.objectCount].y = p.oam[i]
+						p.objects[p.objectCount].x = p.oam[i+1]
+						p.objects[p.objectCount].tileIdx = p.oam[i+2]
+						p.objects[p.objectCount].attrs = p.oam[i+3]
+
+						p.objectCount++
 					}
 
 					i += 4
 				}
 
-				p.setSTATMode(DRAW)
+				p.setPPUMode(DRAW)
 			}
 
 		case DRAW:
 			if p.cycles == 288 {
-				bgTileMapArea := bgTileMapAreas[p.lcdc>>3&1]
+				y := p.ly
 
-				bgWindowArea := TILE_BLOCK_1
-				if p.lcdc&1<<4 != 0 {
-					bgWindowArea = TILE_BLOCK_0
+				for row := range WIDTH / 8 {
+					tileX := uint8(row*8) + p.scx
+					tileY := y + p.scy
+					tilePixelRow := p.getBGTilePixelRow(tileX, tileY)
+
+					for b := range 8 {
+						x := row*8 + b
+						p.frameBuffer[x][y] = tilePixelRow[b]
+					}
 				}
 
-				p.setBGPixels(bgTileMapArea, bgWindowArea)
-
-				for i := range p.objects {
-					p.objects[i] = 0
-				}
-
-				p.setSTATMode(HBLANK)
+				p.setPPUMode(HBLANK)
 
 				if p.stat&0x8 != 0 {
 					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
@@ -248,9 +260,9 @@ func (p *PPU) Step(cycles int) {
 
 				p.ly++
 				if p.ly < 144 {
-					p.setSTATMode(OAM_SCAN)
+					p.setPPUMode(OAM_SCAN)
 				} else {
-					p.setSTATMode(VBLANK)
+					p.setPPUMode(VBLANK)
 					p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
 
 					if p.stat&0x10 != 0 {
@@ -265,7 +277,7 @@ func (p *PPU) Step(cycles int) {
 
 				p.ly++
 				if p.ly == 154 {
-					p.setSTATMode(OAM_SCAN)
+					p.setPPUMode(OAM_SCAN)
 
 					p.ly = 0
 					if p.stat&0x20 != 0 {
@@ -277,53 +289,63 @@ func (p *PPU) Step(cycles int) {
 	}
 
 	if p.ly == p.lyc {
+		p.setLYEqLYC(1)
+
 		if p.stat&0x40 != 0 {
-			p.setSTATLYC(1)
+			fmt.Println("stat interrupt")
 			p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 		}
 	} else {
-		p.setSTATLYC(0)
+		p.setLYEqLYC(0)
 	}
 }
 
-func (p *PPU) setBGPixels(bgTileMapArea, bgWindowArea uint16) {
-	bgY := p.ly + p.scy
-	tileY := bgY / 8
-	fineY := bgY % 8
-
-	for row := range WIDTH / 8 {
-		tilemapAddr := bgTileMapArea + uint16(row) + uint16(tileY)*32
-		tileIdx := p.vram[tilemapAddr-VRAM_START]
-
-		tileDataAddr := bgWindowArea + uint16(tileIdx)*16
-
-		tileLo := p.vram[(tileDataAddr+uint16(fineY)*2)-VRAM_START]
-		tileHi := p.vram[(tileDataAddr+uint16(fineY)*2+1)-VRAM_START]
-
-		for b := range 8 {
-			x := b + row*8
-			loPx := (tileLo >> (7 - b)) & 0x1
-			hiPx := (tileHi >> (7 - b)) & 0x1
-			colorIdx := hiPx<<1 | loPx
-			pixel := (p.bgp >> (colorIdx * 2)) & 0x3
-			p.frameBuffer[x][p.ly] = pixel
-		}
-	}
-}
-
-func (p *PPU) getSTATMode() mode {
+func (p *PPU) getPPUMode() mode {
 	return mode(p.stat & 0x3)
 }
 
-func (p *PPU) setSTATMode(mode mode) {
+func (p *PPU) setPPUMode(mode mode) {
 	p.stat = (p.stat & 0xFC) | uint8(mode)
 }
 
-func (p *PPU) setSTATLYC(value uint8) {
-	p.stat = (p.stat & 0xFB) | value&1
+func (p *PPU) setLYEqLYC(value uint8) {
+	p.stat = (p.stat & 0xFB) | value<<2
 }
 
-func (p *PPU) objSize() uint8 {
+func (p *PPU) getBGTilePixelRow(x, y uint8) [8]uint8 {
+	var (
+		tileAddr     uint16
+		tilePixelRow [8]uint8
+	)
+
+	tileY := y / 8
+	tileRow := y % 8
+	tileX := x / 8
+
+	bgTileMapArea := bgTileMapAreas[p.lcdc>>3&1]
+	tileMapIdx := bgTileMapArea + uint16(tileX) + uint16(tileY)*32
+	tileIdx := p.vram[tileMapIdx-VRAM_START]
+
+	if p.lcdc&0x10 != 0 {
+		tileAddr = TILE_BLOCK_0 + uint16(tileIdx)*16
+	} else {
+		tileAddr = uint16(int32(TILE_BLOCK_1) + int32(int8(tileIdx))*16)
+	}
+
+	tileLo := p.vram[tileAddr+uint16(tileRow)*2-VRAM_START]
+	tileHi := p.vram[tileAddr+uint16(tileRow)*2+1-VRAM_START]
+
+	for b := range 8 {
+		loPx := (tileLo >> (7 - b)) & 0x1
+		hiPx := (tileHi >> (7 - b)) & 0x1
+		colorIdx := hiPx<<1 | loPx
+		tilePixelRow[b] = (p.bgp >> (colorIdx * 2)) & 0x3
+	}
+
+	return tilePixelRow
+}
+
+func (p *PPU) getObjHeight() uint8 {
 	if p.lcdc&0x4 == 1 {
 		return 16
 	}

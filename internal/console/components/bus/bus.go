@@ -2,9 +2,6 @@ package bus
 
 import (
 	_ "embed"
-	"fmt"
-
-	"github.com/cterence/gbgo/internal/log"
 )
 
 const (
@@ -22,11 +19,15 @@ const (
 
 	WRAM_START = 0xC000
 	WRAM_END   = 0xDFFF
-	WRAM_SIZE  = WRAM_END - WRAM_START + 1
+
+	ECHO_START = 0xE000
+	ECHO_END   = 0xFDFF
 
 	HRAM_START = 0xFF80
 	HRAM_END   = 0xFFFE
-	HRAM_SIZE  = HRAM_END - HRAM_START + 1
+
+	UNUSED_START = 0xFEA0
+	UNUSED_END   = 0xFEFF
 
 	DIV  = 0xFF04
 	TIMA = 0xFF05
@@ -84,25 +85,24 @@ func (b *Bus) Read(addr uint16) uint8 {
 		return b.DMA.Read(addr)
 	case addr == 0xFF01 || addr == 0xFF02:
 		return b.Serial.Read(addr)
-	// FIXME: needed for cpu_instrs to pass
-	case addr == 0xFF4D:
-		return 0xFF
 	case addr == DIV || addr == TIMA || addr == TMA || addr == TAC:
 		return b.Timer.Read(addr)
 	case addr == IFF || addr == IE:
 		return b.CPU.Read(addr)
 	case addr >= WRAM_START && addr <= WRAM_END || addr >= HRAM_START && addr <= HRAM_END:
 		return b.Memory.Read(addr)
+	case addr >= ECHO_START && addr <= ECHO_END:
+		return b.Memory.Read(addr - ECHO_START + WRAM_START)
+	case addr >= UNUSED_START && addr <= UNUSED_END:
+		return 0xFF
 	// TODO: joypad
 	case addr == 0xFF00:
 		return 0xFF
 	// TODO: apu
 	case addr >= 0xFF10 && addr <= 0xFF3F:
-		return 0
+		return 0xFF
 	default:
-		fmt.Printf("unsupported bus read: %x\n", addr)
-
-		return 0
+		return 0xFF
 	}
 }
 
@@ -121,16 +121,16 @@ func (b *Bus) Write(addr uint16, value uint8) {
 	case addr == IFF || addr == IE:
 		b.CPU.Write(addr, value)
 	case addr == 0xFF50:
-		log.Debug("[bus] boot rom disabled")
-
 		b.bank = value
 	case addr >= WRAM_START && addr <= WRAM_END || addr >= HRAM_START && addr <= HRAM_END:
 		b.Memory.Write(addr, value)
+	case addr >= ECHO_START && addr <= ECHO_END:
+		b.Memory.Write(addr-ECHO_START+WRAM_START, value)
+	case addr >= UNUSED_START && addr <= UNUSED_END:
 	// TODO: joypad
 	case addr == 0xFF00:
 	// TODO: apu
 	case addr >= 0xFF10 && addr <= 0xFF3F:
 	default:
-		fmt.Printf("unsupported bus write: %x\n", addr)
 	}
 }
