@@ -218,9 +218,9 @@ func (p *PPU) Step(cycles int) {
 			p.objectCount = 0
 
 			for i < OAM_SIZE && p.objectCount < 10 {
-				y := p.oam[i] - 16
+				y := p.oam[i]
 
-				if p.ly >= y && p.ly <= p.getObjHeight()+y {
+				if p.ly+16 >= y && p.ly+16 < p.getObjHeight()+y {
 					p.objects[p.objectCount].y = p.oam[i]
 					p.objects[p.objectCount].x = p.oam[i+1]
 					p.objects[p.objectCount].tileIdx = p.oam[i+2]
@@ -237,16 +237,61 @@ func (p *PPU) Step(cycles int) {
 
 	case DRAW:
 		if p.cycles >= 288 {
-			y := p.ly
-
 			for row := range WIDTH / 8 {
 				tileX := uint8(row*8) + p.scx
-				tileY := y + p.scy
+				tileY := p.ly + p.scy
 				tilePixelRow := p.getBGTilePixelRow(tileX, tileY)
 
 				for b := range 8 {
 					x := row*8 + b
-					p.frameBuffer[x][y] = tilePixelRow[b]
+					p.frameBuffer[x][p.ly] = tilePixelRow[b]
+				}
+			}
+
+			for i := range p.objectCount {
+				objIdx := p.objectCount - 1 - i
+				obj := p.objects[objIdx]
+
+				// Skip drawing object if background / window has priority
+				if obj.attrs&0x80 != 0 {
+					continue
+				}
+
+				tileRow := p.ly + 16 - obj.y
+				if obj.attrs&0x40 != 0 {
+					tileRow = p.getObjHeight() - 1 - tileRow
+				}
+
+				tileAddr := TILE_BLOCK_0 + uint16(obj.tileIdx)*16
+				tileLo := p.vram[tileAddr+uint16(tileRow)*2-VRAM_START]
+				tileHi := p.vram[tileAddr+uint16(tileRow)*2+1-VRAM_START]
+
+				palette := p.obp0
+				if obj.attrs&0x10 != 0 {
+					palette = p.obp1
+				}
+
+				for b := range 8 {
+					pixelIdx := 7 - b
+					if obj.attrs&0x20 != 0 {
+						pixelIdx = b
+					}
+
+					loPx := (tileLo >> pixelIdx) & 0x1
+					hiPx := (tileHi >> pixelIdx) & 0x1
+					colorIdx := hiPx<<1 | loPx
+
+					// Transparent pixel
+					if colorIdx == 0 {
+						continue
+					}
+
+					color := (palette >> (colorIdx * 2)) & 0x3
+
+					xDraw := obj.x + uint8(b) - 8
+					if xDraw < WIDTH {
+						p.frameBuffer[xDraw][p.ly] = color
+					}
 				}
 			}
 
@@ -306,11 +351,11 @@ func (p *PPU) getPPUMode() mode {
 }
 
 func (p *PPU) setPPUMode(mode mode) {
-	p.stat = (p.stat & 0xFC) | uint8(mode)
+	p.stat = (p.stat &^ 0x3) | uint8(mode)
 }
 
 func (p *PPU) setLYEqLYC(value uint8) {
-	p.stat = (p.stat & 0xFB) | value<<2
+	p.stat = (p.stat &^ 0x4) | value<<2
 }
 
 func (p *PPU) getBGTilePixelRow(x, y uint8) [8]uint8 {

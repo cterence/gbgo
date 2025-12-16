@@ -153,25 +153,41 @@ func (ui *UI) handleEvents() {
 	}
 
 	prevA := ui.buttons.a
-	prevRight := ui.buttons.r
+	prevR := ui.buttons.r
 	prevB := ui.buttons.b
-	prevLeft := ui.buttons.l
-	prevSelectB := ui.buttons.sel
-	prevUp := ui.buttons.u
-	prevStart := ui.buttons.st
-	prevDown := ui.buttons.d
+	prevL := ui.buttons.l
+	prevSel := ui.buttons.sel
+	prevU := ui.buttons.u
+	prevSt := ui.buttons.st
+	prevD := ui.buttons.d
 
 	ui.buttons.a = rl.IsKeyDown(rl.KeyA)
 	ui.buttons.b = rl.IsKeyDown(rl.KeyD)
-	ui.buttons.st = rl.IsKeyDown(rl.KeyQ)
-	ui.buttons.sel = rl.IsKeyDown(rl.KeyE)
+	ui.buttons.st = rl.IsKeyDown(rl.KeyZ)
+	ui.buttons.sel = rl.IsKeyDown(rl.KeyC)
 	ui.buttons.u = rl.IsKeyDown(rl.KeyUp)
 	ui.buttons.d = rl.IsKeyDown(rl.KeyDown)
 	ui.buttons.r = rl.IsKeyDown(rl.KeyRight)
 	ui.buttons.l = rl.IsKeyDown(rl.KeyLeft)
 
+	dpadPressed, buttonPressed := false, false
+
+	if ui.joypad&0x10 == 0 {
+		dpadPressed = (!prevR && ui.buttons.r) ||
+			(!prevL && ui.buttons.l) ||
+			(!prevU && ui.buttons.u) ||
+			(!prevD && ui.buttons.d)
+	}
+
+	if ui.joypad&0x20 == 0 {
+		buttonPressed = (!prevA && ui.buttons.a) ||
+			(!prevB && ui.buttons.b) ||
+			(!prevSel && ui.buttons.sel) ||
+			(!prevSt && ui.buttons.st)
+	}
+
 	// Trigger interrupt on rising edge
-	if (ui.joypad&0x10 == 0 && (ui.buttons.st || !prevRight && ui.buttons.r || !prevLeft && ui.buttons.l || !prevUp && ui.buttons.u || !prevStart && !prevDown && ui.buttons.d)) || (ui.joypad&0x20 == 0 && (!prevA && ui.buttons.a || !prevB && ui.buttons.b || !prevSelectB && ui.buttons.sel)) {
+	if dpadPressed || buttonPressed {
 		ui.CPU.RequestInterrupt(INTERRUPT_CODE)
 	}
 }
