@@ -1,9 +1,7 @@
 package ui
 
 import (
-	"fmt"
-
-	"github.com/Zyko0/go-sdl3/sdl"
+	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
 type console interface {
@@ -15,18 +13,13 @@ type bus interface {
 }
 
 type ppu interface {
-	GetFramebuffer() [WIDTH * HEIGHT * PIXEL_BYTES]uint8
+	GetFrameBuffer() [WIDTH][HEIGHT]uint8
 }
 
 type UI struct {
 	Console console
 	Bus     bus
 	PPU     ppu
-
-	window   *sdl.Window
-	renderer *sdl.Renderer
-	texture  *sdl.Texture
-	surface  *sdl.Surface
 }
 
 const (
@@ -34,92 +27,49 @@ const (
 	HEIGHT      = 144
 	PIXEL_BYTES = 4
 	SCALE       = 4
-
-	VRAM_BLOCK_0_START = 0x8000
-	VRAM_BLOCK_0_END   = 0x87FF
-
-	VRAM_BLOCK_1_START = 0x8800
-	VRAM_BLOCK_1_END   = 0x8FFF
-
-	VRAM_BLOCK_2_START = 0x9000
-	VRAM_BLOCK_2_END   = 0x97FF
-
-	VRAM_SIZE = VRAM_BLOCK_2_END - VRAM_BLOCK_0_START + 1
 )
 
+var palette = [4]rl.Color{
+	{A: 0xFF, R: 0xFF, G: 0xFF, B: 0xFF},
+	{A: 0xFF, R: 0xAA, G: 0xAA, B: 0xAA},
+	{A: 0xFF, R: 0x55, G: 0x55, B: 0x55},
+	{A: 0xFF, R: 0x00, G: 0x00, B: 0x00},
+}
+
 func (ui *UI) Init() error {
-	err := sdl.Init(sdl.INIT_VIDEO)
-	if err != nil {
-		return fmt.Errorf("failed to init sdl: %w", err)
-	}
-
-	if ui.window == nil && ui.renderer == nil {
-		ui.window, ui.renderer, err = sdl.CreateWindowAndRenderer("gbgo", WIDTH*SCALE, HEIGHT*SCALE, sdl.WINDOW_RESIZABLE)
-		if err != nil {
-			return fmt.Errorf("failed to create window and renderer: %w", err)
-		}
-	}
-
-	if ui.texture == nil {
-		ui.texture, err = ui.renderer.CreateTexture(sdl.PIXELFORMAT_ARGB8888, sdl.TEXTUREACCESS_STREAMING, WIDTH, HEIGHT)
-		if err != nil {
-			return fmt.Errorf("failed to create texture: %w", err)
-		}
-
-		if err := ui.texture.SetScaleMode(sdl.SCALEMODE_NEAREST); err != nil {
-			return fmt.Errorf("failed to set texture scale mode: %w", err)
-		}
-	}
-
-	if ui.surface == nil {
-		ui.surface, err = sdl.CreateSurface(WIDTH, HEIGHT, sdl.PIXELFORMAT_ARGB8888)
-		if err != nil {
-			panic("failed to create surface: " + err.Error())
-		}
-	}
+	rl.SetTraceLogLevel(rl.LogError)
+	rl.InitWindow(WIDTH*SCALE, HEIGHT*SCALE, "gbgo")
+	rl.SetTargetFPS(60)
 
 	return nil
 }
 
 func (ui *UI) Step() {
-	ui.drawVRAM()
+	ui.drawFrameBuffer()
 	ui.handleEvents()
 }
 
-func (ui *UI) drawVRAM() {
-	framebuffer := ui.PPU.GetFramebuffer()
+func (ui *UI) drawFrameBuffer() {
+	framebuffer := ui.PPU.GetFrameBuffer()
 
-	if err := ui.texture.Update(nil, framebuffer[:], ui.surface.Pitch); err != nil {
-		panic("failed to update texture: " + err.Error())
+	rl.BeginDrawing()
+
+	for y := range HEIGHT {
+		for x := range WIDTH {
+			color := palette[framebuffer[x][y]]
+			rl.DrawRectangle(int32(x)*SCALE, int32(y)*SCALE, SCALE, SCALE, color)
+		}
 	}
 
-	if err := ui.renderer.Clear(); err != nil {
-		panic("failed to clear renderer: " + err.Error())
-	}
-
-	if err := ui.renderer.RenderTexture(ui.texture, nil, nil); err != nil {
-		panic("failed to render texture: " + err.Error())
-	}
-
-	if err := ui.renderer.Present(); err != nil {
-		panic("failed to present UI: " + err.Error())
-	}
+	rl.EndDrawing()
 }
 
 func (ui *UI) handleEvents() {
-	var event sdl.Event
-
-	for sdl.PollEvent(&event) {
-		switch event.Type {
-		case sdl.EVENT_QUIT, sdl.EVENT_WINDOW_DESTROYED:
-			ui.Console.Shutdown()
-		}
+	if rl.WindowShouldClose() {
+		ui.Console.Shutdown()
 	}
 }
 
 func (ui *UI) Close() {
-	ui.surface.Destroy()
-	ui.texture.Destroy()
-	ui.renderer.Destroy()
-	ui.window.Destroy()
+	rl.CloseWindow()
 }

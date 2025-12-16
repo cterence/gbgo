@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Zyko0/go-sdl3/bin/binsdl"
 	"github.com/cterence/gbgo/internal/console/components/bus"
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
 	"github.com/cterence/gbgo/internal/console/components/cpu"
@@ -124,9 +123,6 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	}
 
 	if !gb.headless {
-		defer binsdl.Load().Unload()
-		defer gb.ui.Close()
-
 		if err := gb.ui.Init(); err != nil {
 			return fmt.Errorf("failed to init UI: %w", err)
 		}

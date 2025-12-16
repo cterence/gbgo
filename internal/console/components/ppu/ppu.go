@@ -1,7 +1,6 @@
 package ppu
 
 import (
-	"encoding/binary"
 	"fmt"
 )
 
@@ -62,7 +61,7 @@ type PPU struct {
 
 	cycles int
 
-	frameBuffer [WIDTH * HEIGHT * 4]uint8
+	frameBuffer [WIDTH][HEIGHT]uint8
 
 	vram    [VRAM_SIZE]uint8
 	oam     [OAM_SIZE]uint8
@@ -194,14 +193,7 @@ func (p *PPU) ToggleDMAActive(active bool) {
 
 var bgTileMapAreas = [2]uint16{0x9800, 0x9C00}
 
-var palette = [4]uint32{
-	0xFFFFFFFF,
-	0xFFAAAAAA,
-	0xFF555555,
-	0xFF000000,
-}
-
-func (p *PPU) GetFramebuffer() [WIDTH * HEIGHT * 4]uint8 {
+func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
 	return p.frameBuffer
 }
 
@@ -327,8 +319,7 @@ func (p *PPU) setBGPixels(bgTileMapArea, bgWindowArea uint16) {
 			hiPx := (tileHi >> (7 - b)) & 0x1
 			pixel := hiPx<<1 | loPx
 
-			offset := (x + int(p.ly)*WIDTH) * PIXEL_BYTES
-			binary.LittleEndian.PutUint32(p.frameBuffer[offset:offset+4], palette[pixel])
+			p.frameBuffer[x][p.ly] = pixel
 		}
 	}
 }

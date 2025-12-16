@@ -39,13 +39,24 @@
         { pkgs }:
         {
           default = pkgs.mkShell {
+            CGO_ENABLED = 1;
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+              pkgs.libdecor
+            ];
             shellHook = ''
-              export LD_LIBRARY_PATH=${pkgs.lib.getLib pkgs.alsa-lib}/lib:${pkgs.lib.getLib pkgs.wayland}/lib:${pkgs.lib.getLib pkgs.libGL}/lib:${pkgs.lib.getLib pkgs.libdecor}/lib:${pkgs.lib.getLib pkgs.libxkbcommon}/lib:$LD_LIBRARY_PATH
               ${self.checks.${pkgs.stdenv.hostPlatform.system}.pre-commit-check.shellHook}
             '';
             hardeningDisable = [ "fortify" ]; # Make delve work with direnv IDE extension
-            nativeBuildInputs = with pkgs; [
+            buildInputs = with pkgs; [
               go
+              wayland
+              libxkbcommon
+              xorg.libX11
+              xorg.libXcursor
+              xorg.libXrandr
+              xorg.libXinerama
+              xorg.libXi
+              libGL
             ];
             packages = with pkgs; [
               air
