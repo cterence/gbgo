@@ -19,6 +19,8 @@ type CPU struct {
 	Bus     bus
 	Console console
 
+	currentOpcode *Opcode
+
 	pc uint16
 	sp uint16
 
@@ -36,6 +38,7 @@ type CPU struct {
 	iff          uint8 // 0xFF0F
 	ie           uint8 // 0xFFFF
 	halted       bool
+	haltBug      bool
 
 	// Emulator
 	debug      bool
@@ -63,8 +66,8 @@ func WithBootROM(useBootROM bool) Option {
 }
 
 func (c *CPU) String() string {
-	opc := c.getOpcode(c.Bus.Read(c.pc))
-	return fmt.Sprintf("%-12s - A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", opc, c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
+	return fmt.Sprintf("%-12s - A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", c.currentOpcode, c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
+	// return fmt.Sprintf("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
 }
 
 func (c *CPU) Init(options ...Option) error {
@@ -105,15 +108,15 @@ func (c *CPU) Init(options ...Option) error {
 	return nil
 }
 
-func (c *CPU) Step() (int, error) {
-	cycles := 4
+func (c *CPU) Step() int {
+	cycles := 0
 
 	if c.halted {
 		if c.ie&c.iff&0x1F != 0 { // Interrupt pending?
 			c.halted = false
+		} else {
+			return 4 // Return base CPU cycle
 		}
-
-		return cycles, nil // Return base CPU cycle
 	}
 
 	if log.DebugEnabled {
@@ -124,10 +127,7 @@ func (c *CPU) Step() (int, error) {
 		cycles = c.handleInterrupts()
 	}
 
-	opcode := c.getOpcode(c.Bus.Read(c.pc))
-	if opcode.Func == nil {
-		return 0, fmt.Errorf("nil opcode func: %v", opcode)
-	}
+	opcode := c.getOpcode()
 
 	cycles += opcode.Func(opcode)
 
@@ -136,13 +136,13 @@ func (c *CPU) Step() (int, error) {
 		c.imeScheduled = false
 	}
 
-	return cycles, nil
+	return cycles
 }
 
 func (c *CPU) Read(addr uint16) uint8 {
 	switch addr {
 	case IFF:
-		return c.iff
+		return c.iff | 0xE0
 	case IE:
 		return c.ie
 	default:
@@ -165,13 +165,33 @@ func (c *CPU) RequestInterrupt(code uint8) {
 	c.iff |= code
 }
 
-func (c *CPU) getOpcode(opcodeHex uint8) *Opcode {
-	opcode := &UnprefixedOpcodes[opcodeHex]
+func (c *CPU) fetchByte() uint8 {
+	val := c.Bus.Read(c.pc)
+
+	if c.haltBug {
+		c.haltBug = false
+	} else {
+		c.pc++
+	}
+
+	return val
+}
+
+func (c *CPU) fetchWord() uint16 {
+	lo := c.fetchByte()
+	hi := c.fetchByte()
+
+	return uint16(hi)<<8 | uint16(lo)
+}
+
+func (c *CPU) getOpcode() *Opcode {
+	opcode := &UnprefixedOpcodes[c.fetchByte()]
 
 	if opcode.Mnemonic == "PREFIX" {
-		opcodeHex = c.Bus.Read(c.pc + 1)
-		opcode = &CBPrefixedOpcodes[opcodeHex]
+		opcode = &CBPrefixedOpcodes[c.fetchByte()]
 	}
+
+	c.currentOpcode = opcode
 
 	return opcode
 }
@@ -195,7 +215,7 @@ func (c *CPU) getOp(op string) uint8 {
 	case "L":
 		return c.l
 	case "n8":
-		return c.Bus.Read(c.pc + 1)
+		return c.fetchByte()
 	case "HL":
 		return c.Bus.Read(uint16(c.h)<<8 | uint16(c.l))
 	default:

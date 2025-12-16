@@ -7,50 +7,45 @@ import (
 // Unprefixed
 
 func (c *CPU) nop(opc *Opcode) int {
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
 func (c *CPU) call(opc *Opcode) int {
 	op0 := opc.Operands[0]
 
-	doCall := func(c *CPU) {
-		imm16 := uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
-		c.pushValue(c.pc + opc.Bytes)
-		c.pc = imm16
-	}
+	word := c.fetchWord()
 
 	switch op0.Name {
 	case "a16":
-		doCall(c)
+		c.pushValue(c.pc)
+		c.pc = word
 	case "NZ":
 		if !c.getZF() {
-			doCall(c)
+			c.pushValue(c.pc)
+			c.pc = word
+
 			return opc.Cycles[1]
-		} else {
-			c.pc += opc.Bytes
 		}
 	case "Z":
 		if c.getZF() {
-			doCall(c)
+			c.pushValue(c.pc)
+			c.pc = word
+
 			return opc.Cycles[1]
-		} else {
-			c.pc += opc.Bytes
 		}
 	case "NC":
 		if !c.getCF() {
-			doCall(c)
+			c.pushValue(c.pc)
+			c.pc = word
+
 			return opc.Cycles[1]
-		} else {
-			c.pc += opc.Bytes
 		}
 	case "C":
 		if c.getCF() {
-			doCall(c)
+			c.pushValue(c.pc)
+			c.pc = word
+
 			return opc.Cycles[1]
-		} else {
-			c.pc += opc.Bytes
 		}
 	default:
 		panic("unimplemented call for " + op0.Name)
@@ -90,20 +85,18 @@ func (c *CPU) ret(opc *Opcode) int {
 		}
 	}
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
 func (c *CPU) reti(opc *Opcode) int {
 	c.pc = c.popValue()
-	c.imeScheduled = true
+	c.ime = true
 
 	return opc.Cycles[0]
 }
 
 func (c *CPU) rst(opc *Opcode) int {
-	c.pushValue(c.pc + opc.Bytes)
+	c.pushValue(c.pc)
 
 	v, err := strconv.ParseUint(opc.Operands[0].Name[1:], 16, 16)
 	if err != nil {
@@ -125,11 +118,11 @@ func (c *CPU) load(opc *Opcode) int {
 	case "A", "F", "B", "C", "D", "E", "H", "L":
 		v8 = c.getOp(op1.Name)
 	case "n8":
-		v8 = c.Bus.Read(c.pc + 1)
+		v8 = c.fetchByte()
 	case "n16":
-		v16 = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+		v16 = c.fetchWord()
 	case "a16":
-		v8 = c.Bus.Read(uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1)))
+		v8 = c.Bus.Read(c.fetchWord())
 	case "BC", "DE", "HL":
 		if !op1.Immediate {
 			v8 = c.Bus.Read(c.getDOp(op1.Name))
@@ -148,7 +141,7 @@ func (c *CPU) load(opc *Opcode) int {
 		v16 = c.sp
 
 		if len(opc.Operands) == 3 {
-			v := int8(c.Bus.Read(c.pc + 1))
+			v := int8(c.fetchByte())
 			c.setFlags(false, false, (c.sp&0xF)+uint16(v&0xF) > 0xF, c.sp&0xFF+uint16(v)&0xFF > 0xFF)
 			v16 += uint16(v)
 		}
@@ -174,22 +167,18 @@ func (c *CPU) load(opc *Opcode) int {
 			c.setDOp(op0.Name, v16)
 		}
 	case "a16":
-		hi := uint16(c.Bus.Read(c.pc + 2))
-		lo := uint16(c.Bus.Read(c.pc + 1))
-
+		word := c.fetchWord()
 		if op1.Name == "SP" {
-			c.Bus.Write(hi<<8|lo, uint8(c.sp))
-			c.Bus.Write(hi<<8|lo+1, uint8(c.sp>>8))
+			c.Bus.Write(word, uint8(c.sp))
+			c.Bus.Write(word+1, uint8(c.sp>>8))
 		}
 
 		if op1.Name == "A" {
-			c.Bus.Write(hi<<8|lo, c.a)
+			c.Bus.Write(word, c.a)
 		}
 	default:
 		panic("unimplemented op0 for load: " + op0.Name)
 	}
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -200,12 +189,12 @@ func (c *CPU) loadH(opc *Opcode) int {
 
 	switch op0.Name {
 	case "a8":
-		c.Bus.Write(0xFF00|uint16(c.Bus.Read(c.pc+1)), c.a)
+		c.Bus.Write(0xFF00|uint16(c.fetchByte()), c.a)
 	case "C":
 		c.Bus.Write(0xFF00|uint16(c.c), c.a)
 	case "A":
 		if op1.Name == "a8" {
-			c.a = c.Bus.Read(0xFF00 | uint16(c.Bus.Read(c.pc+1)))
+			c.a = c.Bus.Read(0xFF00 | uint16(c.fetchByte()))
 		}
 
 		if op1.Name == "C" {
@@ -214,8 +203,6 @@ func (c *CPU) loadH(opc *Opcode) int {
 	default:
 		panic("unimplemented loadH for " + op0.Name)
 	}
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -242,8 +229,6 @@ func (c *CPU) inc(opc *Opcode) int {
 		}
 	}
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
@@ -269,15 +254,13 @@ func (c *CPU) dec(opc *Opcode) int {
 		}
 	}
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
 func (c *CPU) jumpAbs(opc *Opcode) int {
 	switch opc.Operands[0].Name {
 	case "a16":
-		c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+		c.pc = c.fetchWord()
 
 		return opc.Cycles[0]
 	case "HL":
@@ -285,85 +268,83 @@ func (c *CPU) jumpAbs(opc *Opcode) int {
 
 		return opc.Cycles[0]
 	case "NZ":
+		word := c.fetchWord()
 		if !c.getZF() {
-			c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+			c.pc = word
 
 			return opc.Cycles[1]
 		}
 	case "Z":
+		word := c.fetchWord()
 		if c.getZF() {
-			c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+			c.pc = word
 
 			return opc.Cycles[1]
 		}
 	case "NC":
+		word := c.fetchWord()
 		if !c.getCF() {
-			c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+			c.pc = word
 
 			return opc.Cycles[1]
 		}
 	case "C":
+		word := c.fetchWord()
 		if c.getCF() {
-			c.pc = uint16(c.Bus.Read(c.pc+2))<<8 | uint16(c.Bus.Read(c.pc+1))
+			c.pc = word
 
 			return opc.Cycles[1]
 		}
 	default:
 		panic("unimplemented jump for " + opc.Operands[0].Name)
 	}
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
 
 func (c *CPU) jumpRel(opc *Opcode) int {
-	var bytes int8
+	bytes := c.fetchByte()
 
 	cycles := opc.Cycles[0]
 
 	switch opc.Operands[0].Name {
 	case "e8":
-		bytes = int8(c.Bus.Read(c.pc + 1))
+		c.pc += uint16(int8(bytes))
 	case "NZ":
 		if !c.getZF() {
-			bytes = int8(c.Bus.Read(c.pc + 1))
+			c.pc += uint16(int8(bytes))
 			cycles = opc.Cycles[1]
 		}
 	case "Z":
 		if c.getZF() {
-			bytes = int8(c.Bus.Read(c.pc + 1))
+			c.pc += uint16(int8(bytes))
 			cycles = opc.Cycles[1]
 		}
 	case "NC":
 		if !c.getCF() {
-			bytes = int8(c.Bus.Read(c.pc + 1))
+			c.pc += uint16(int8(bytes))
 			cycles = opc.Cycles[1]
 		}
 	case "C":
 		if c.getCF() {
-			bytes = int8(c.Bus.Read(c.pc + 1))
+			c.pc += uint16(int8(bytes))
 			cycles = opc.Cycles[1]
 		}
 	default:
 		panic("unimplemented jump for " + opc.Operands[0].Name)
 	}
-
-	c.pc += opc.Bytes + uint16(bytes)
 
 	return cycles
 }
 
 func (c *CPU) ei(opc *Opcode) int {
 	c.imeScheduled = true
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
 
 func (c *CPU) di(opc *Opcode) int {
 	c.ime = false
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -394,14 +375,12 @@ func (c *CPU) add(opc *Opcode) int {
 			c.setFlags(c.getZF(), false, uint32(v1&0xFFF)+uint32(v2&0xFFF) > 0xFFF, uint32(v1)+uint32(v2) > 0xFFFF)
 			c.setDOp(op0.Name, v1+v2)
 		case "SP":
-			v := int8(c.Bus.Read(c.pc + 1))
+			v := int8(c.fetchByte())
 			c.setFlags(false, false, (c.sp&0xF)+uint16(v&0xF) > 0xF, c.sp&0xFF+uint16(v)&0xFF > 0xFF)
 
 			c.sp += uint16(v)
 		}
 	}
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -420,15 +399,12 @@ func (c *CPU) sub(opc *Opcode) int {
 	c.setFlags(res == 0, true, c.a&0xF < v&0xF+cy, uint16(c.a&0xFF) < uint16(v&0xFF)+uint16(cy))
 
 	c.a = res
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
 
 func (c *CPU) push(opc *Opcode) int {
 	c.pushValue(c.getDOp(opc.Operands[0].Name))
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -442,8 +418,6 @@ func (c *CPU) pop(opc *Opcode) int {
 
 	c.setDOp(opc.Operands[0].Name, v)
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
@@ -451,8 +425,6 @@ func (c *CPU) and(opc *Opcode) int {
 	c.a &= c.getOp(opc.Operands[1].Name)
 
 	c.setFlags(c.a == 0, false, true, false)
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -462,8 +434,6 @@ func (c *CPU) or(opc *Opcode) int {
 
 	c.setFlags(c.a == 0, false, false, false)
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
@@ -471,8 +441,6 @@ func (c *CPU) xor(opc *Opcode) int {
 	c.a ^= c.getOp(opc.Operands[1].Name)
 
 	c.setFlags(c.a == 0, false, false, false)
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -482,8 +450,6 @@ func (c *CPU) cp(opc *Opcode) int {
 	res := c.a - v
 
 	c.setFlags(res == 0, true, c.a&0xF < v&0xF, c.a < v)
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -519,7 +485,6 @@ func (c *CPU) daa(opc *Opcode) int {
 	c.setFlags(res == 0, c.getNF(), false, cy)
 
 	c.a = res
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -538,14 +503,11 @@ func (c *CPU) rra(opc *Opcode) int {
 	c.a = res
 	c.setFlags(false, false, false, sb == 1)
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
 func (c *CPU) cpl(opc *Opcode) int {
 	c.a = ^c.a
-	c.pc += opc.Bytes
 
 	c.setFlags(c.getZF(), true, true, c.getCF())
 
@@ -554,28 +516,29 @@ func (c *CPU) cpl(opc *Opcode) int {
 
 func (c *CPU) scf(opc *Opcode) int {
 	c.setFlags(c.getZF(), false, false, true)
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
 
 func (c *CPU) ccf(opc *Opcode) int {
 	c.setFlags(c.getZF(), false, false, !c.getCF())
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
 
 func (c *CPU) halt(opc *Opcode) int {
-	c.halted = true
-	c.pc += opc.Bytes
+	if !c.ime && (c.ie&c.iff&0x1F != 0) {
+		c.haltBug = true
+	} else {
+		c.halted = true
+	}
 
 	return opc.Cycles[0]
 }
 
 func (c *CPU) stop(opc *Opcode) int {
+	c.fetchByte()
 	c.Console.Stop()
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -595,8 +558,6 @@ func (c *CPU) rr(opc *Opcode) int {
 
 	c.setOp(opc.Operands[0].Name, res)
 	c.setFlags(res == 0, false, false, sb == 1)
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -625,8 +586,6 @@ func (c *CPU) rl(opc *Opcode) int {
 		c.setFlags(res == 0, false, false, sb == 1)
 	}
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
@@ -648,8 +607,6 @@ func (c *CPU) rlc(opc *Opcode) int {
 		c.setOp(opc.Operands[0].Name, res)
 		c.setFlags(res == 0, false, false, sb == 1)
 	}
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -673,8 +630,6 @@ func (c *CPU) rrc(opc *Opcode) int {
 		c.setFlags(res == 0, false, false, sb == 1)
 	}
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
@@ -686,8 +641,6 @@ func (c *CPU) sla(opc *Opcode) int {
 
 	c.setOp(opc.Operands[0].Name, res)
 	c.setFlags(res == 0, false, false, sb == 1)
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -706,8 +659,6 @@ func (c *CPU) srla(opc *Opcode) int {
 	c.setOp(opc.Operands[0].Name, res)
 	c.setFlags(res == 0, false, false, sb == 1)
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
@@ -717,8 +668,6 @@ func (c *CPU) swap(opc *Opcode) int {
 
 	c.setOp(opc.Operands[0].Name, v)
 	c.setFlags(v == 0, false, false, false)
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -734,8 +683,6 @@ func (c *CPU) set(opc *Opcode) int {
 
 	c.setOp(op1.Name, c.getOp(op1.Name)|1<<bit)
 
-	c.pc += opc.Bytes
-
 	return opc.Cycles[0]
 }
 
@@ -749,8 +696,6 @@ func (c *CPU) res(opc *Opcode) int {
 	}
 
 	c.setOp(op1.Name, c.getOp(op1.Name)&^(1<<bit))
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }
@@ -769,8 +714,6 @@ func (c *CPU) bit(opc *Opcode) int {
 	res := v & mask >> bit
 
 	c.setFlags(res == 0, false, true, c.getCF())
-
-	c.pc += opc.Bytes
 
 	return opc.Cycles[0]
 }

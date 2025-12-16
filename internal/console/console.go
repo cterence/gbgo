@@ -135,32 +135,34 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 	uiCycles := 0
 
-	for err == nil {
-		select {
-		default:
-			cycles := 0
+	for {
+		cycles := 0
 
-			if !gb.stopped {
-				cycles, err = gb.cpu.Step()
-				gb.timer.Step(cycles)
+		if !gb.stopped {
+			cycles = gb.cpu.Step()
+			gb.timer.Step(cycles)
+		}
+
+		gb.serial.Step(cycles)
+		gb.dma.Step(cycles)
+		gb.ppu.Step(cycles)
+
+		uiCycles += cycles
+		if !gb.headless && uiCycles >= FRAME_CYCLES {
+			gb.ui.Step()
+
+			uiCycles = 0
+		}
+
+		// Check for context every frame cycle
+		if uiCycles == 0 {
+			select {
+			case <-gbCtx.Done():
+				return nil
+			default:
 			}
-
-			gb.serial.Step(cycles)
-			gb.dma.Step(cycles)
-			gb.ppu.Step(cycles)
-
-			uiCycles += cycles
-			if !gb.headless && uiCycles >= FRAME_CYCLES {
-				gb.ui.Step()
-
-				uiCycles -= FRAME_CYCLES
-			}
-		case <-gbCtx.Done():
-			return nil
 		}
 	}
-
-	return err
 }
 
 func Disassemble(romBytes []uint8) error {

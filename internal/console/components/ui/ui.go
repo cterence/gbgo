@@ -39,6 +39,10 @@ type UI struct {
 	PPU     ppu
 	CPU     cpu
 
+	img     *rl.Image
+	pixels  []rl.Color
+	texture rl.Texture2D
+
 	buttons buttons
 
 	joypad uint8
@@ -67,6 +71,10 @@ func (ui *UI) Init() {
 	rl.SetTraceLogLevel(rl.LogError)
 	rl.InitWindow(WIDTH*SCALE, HEIGHT*SCALE, "gbgo")
 	rl.SetTargetFPS(FPS)
+
+	ui.img = rl.GenImageColor(WIDTH, HEIGHT, rl.Black)
+	ui.texture = rl.LoadTextureFromImage(ui.img)
+	ui.pixels = make([]rl.Color, WIDTH*HEIGHT)
 
 	ui.joypad = 0xCF
 }
@@ -140,9 +148,12 @@ func (ui *UI) drawFrameBuffer() {
 	for y := range HEIGHT {
 		for x := range WIDTH {
 			color := palette[framebuffer[x][y]]
-			rl.DrawRectangle(int32(x)*SCALE, int32(y)*SCALE, SCALE, SCALE, color)
+			ui.pixels[y*WIDTH+x] = color
 		}
 	}
+
+	rl.UpdateTexture(ui.texture, ui.pixels[:])
+	rl.DrawTextureEx(ui.texture, rl.Vector2{X: 0, Y: 0}, 0, SCALE, rl.White)
 
 	rl.EndDrawing()
 }
