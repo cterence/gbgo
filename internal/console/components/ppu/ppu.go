@@ -211,16 +211,17 @@ func (p *PPU) Step(cycles int) {
 	p.cycles += cycles
 
 	// Disable LCD / PPU
-	if p.lcdc&0x80 == 0 {
-		// Clear framebuffer
-		for x := range WIDTH {
-			for y := range HEIGHT {
-				p.frameBuffer[x][y] = 0
-			}
-		}
+	// FIXME: blanks out the screen
+	// if p.lcdc&0x80 == 0 {
+	// 	// Clear framebuffer
+	// 	for x := range WIDTH {
+	// 		for y := range HEIGHT {
+	// 			p.frameBuffer[x][y] = 0
+	// 		}
+	// 	}
 
-		return
-	}
+	// 	return
+	// }
 
 	switch p.getPPUMode() {
 	case OAM_SCAN:

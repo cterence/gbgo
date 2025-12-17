@@ -6,8 +6,22 @@ import (
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
+const (
+	WIDTH         = 160
+	HEIGHT        = 144
+	INITIAL_SCALE = 4
+	FPS           = 60
+
+	AXIS_TRIGGER = 0.5
+
+	INTERRUPT_CODE = 0x10
+
+	JOYPAD = 0xFF00
+)
+
 type console interface {
 	Shutdown()
+	Pause()
 }
 
 type bus interface {
@@ -22,16 +36,32 @@ type cpu interface {
 	RequestInterrupt(code uint8)
 }
 
-type buttons struct {
-	a   bool
-	b   bool
-	st  bool
-	sel bool
-	u   bool
-	d   bool
-	l   bool
-	r   bool
+type buttonState struct {
+	keyboardKeys       []int32
+	gamepadButtons     []int32
+	gamepadAxis        []int32
+	gamepadAxisTrigger float32
+	justPressed        bool
+	currentlyPressed   bool
 }
+
+type button uint8
+
+const (
+	// Console buttons
+	A button = iota
+	B
+	START
+	SELECT
+	UP
+	DOWN
+	LEFT
+	RIGHT
+	// Other buttons
+	TURBO
+	PAUSE
+	SLOWMO
+)
 
 type UI struct {
 	Console console
@@ -43,21 +73,8 @@ type UI struct {
 	pixels  []rl.Color
 	texture rl.Texture2D
 
-	buttons buttons
-
 	joypad uint8
 }
-
-const (
-	WIDTH         = 160
-	HEIGHT        = 144
-	INITIAL_SCALE = 4
-	FPS           = 60
-
-	INTERRUPT_CODE = 0x10
-
-	JOYPAD = 0xFF00
-)
 
 var palette = [4]rl.Color{
 	{A: 0xFF, R: 0xFF, G: 0xFF, B: 0xFF},
@@ -65,6 +82,75 @@ var palette = [4]rl.Color{
 	{A: 0xFF, R: 0x55, G: 0x55, B: 0x55},
 	{A: 0xFF, R: 0x00, G: 0x00, B: 0x00},
 }
+
+var buttons = []buttonState{
+	// A
+	{
+		keyboardKeys:   []int32{rl.KeyX},
+		gamepadButtons: []int32{rl.GamepadButtonRightFaceRight, rl.GamepadButtonRightFaceUp},
+	},
+	// B
+	{
+		keyboardKeys:   []int32{rl.KeyZ},
+		gamepadButtons: []int32{rl.GamepadButtonRightFaceLeft, rl.GamepadButtonRightFaceDown},
+	},
+	// START
+	{
+		keyboardKeys:   []int32{rl.KeyEnter},
+		gamepadButtons: []int32{rl.GamepadButtonMiddleRight},
+	},
+	// SELECT
+	{
+		keyboardKeys:   []int32{rl.KeyBackspace},
+		gamepadButtons: []int32{rl.GamepadButtonMiddleLeft},
+	},
+	// UP
+	{
+		keyboardKeys:       []int32{rl.KeyUp},
+		gamepadButtons:     []int32{rl.GamepadButtonLeftFaceUp},
+		gamepadAxis:        []int32{rl.GamepadAxisLeftY},
+		gamepadAxisTrigger: -AXIS_TRIGGER,
+	},
+	// DOWN
+	{
+		keyboardKeys:       []int32{rl.KeyDown},
+		gamepadButtons:     []int32{rl.GamepadButtonLeftFaceDown},
+		gamepadAxis:        []int32{rl.GamepadAxisLeftY},
+		gamepadAxisTrigger: AXIS_TRIGGER,
+	},
+	// LEFT
+	{
+		keyboardKeys:       []int32{rl.KeyLeft},
+		gamepadButtons:     []int32{rl.GamepadButtonLeftFaceLeft},
+		gamepadAxis:        []int32{rl.GamepadAxisLeftX},
+		gamepadAxisTrigger: -AXIS_TRIGGER,
+	},
+	// RIGHT
+	{
+		keyboardKeys:       []int32{rl.KeyRight},
+		gamepadButtons:     []int32{rl.GamepadButtonLeftFaceRight},
+		gamepadAxis:        []int32{rl.GamepadAxisLeftX},
+		gamepadAxisTrigger: AXIS_TRIGGER,
+	},
+	// TURBO
+	{
+		keyboardKeys:   []int32{rl.KeySpace},
+		gamepadButtons: []int32{rl.GamepadButtonRightTrigger2},
+	},
+	// PAUSE
+	{
+		keyboardKeys:   []int32{rl.KeyRightShift},
+		gamepadButtons: []int32{rl.GamepadButtonMiddle},
+	},
+	// SLOWMO
+	{
+		keyboardKeys:   []int32{rl.KeyLeftShift},
+		gamepadButtons: []int32{rl.GamepadButtonLeftTrigger2},
+	},
+}
+
+// TODO: better system for choosing controller
+var gamepad = int32(1)
 
 func (ui *UI) Init() {
 	rl.SetTraceLogLevel(rl.LogError)
@@ -87,37 +173,37 @@ func (ui *UI) Read(addr uint16) uint8 {
 		result := uint8(0xCF) | ui.joypad
 
 		if ui.joypad&0x10 == 0 {
-			if ui.buttons.r {
+			if buttons[RIGHT].currentlyPressed {
 				result &^= 0x1
 			}
 
-			if ui.buttons.l {
+			if buttons[LEFT].currentlyPressed {
 				result &^= 0x2
 			}
 
-			if ui.buttons.u {
+			if buttons[UP].currentlyPressed {
 				result &^= 0x4
 			}
 
-			if ui.buttons.d {
+			if buttons[DOWN].currentlyPressed {
 				result &^= 0x8
 			}
 		}
 
 		if ui.joypad&0x20 == 0 {
-			if ui.buttons.a {
+			if buttons[A].currentlyPressed {
 				result &^= 0x1
 			}
 
-			if ui.buttons.b {
+			if buttons[B].currentlyPressed {
 				result &^= 0x2
 			}
 
-			if ui.buttons.sel {
+			if buttons[SELECT].currentlyPressed {
 				result &^= 0x4
 			}
 
-			if ui.buttons.st {
+			if buttons[START].currentlyPressed {
 				result &^= 0x8
 			}
 		}
@@ -167,61 +253,74 @@ func (ui *UI) drawFrameBuffer() {
 func (ui *UI) handleEvents() {
 	if rl.WindowShouldClose() {
 		ui.Console.Shutdown()
+
+		return
 	}
 
-	prevA := ui.buttons.a
-	prevR := ui.buttons.r
-	prevB := ui.buttons.b
-	prevL := ui.buttons.l
-	prevSel := ui.buttons.sel
-	prevU := ui.buttons.u
-	prevSt := ui.buttons.st
-	prevD := ui.buttons.d
-
-	ui.buttons.a = rl.IsKeyDown(rl.KeyX)
-	ui.buttons.b = rl.IsKeyDown(rl.KeyZ)
-	ui.buttons.st = rl.IsKeyDown(rl.KeyEnter)
-	ui.buttons.sel = rl.IsKeyDown(rl.KeyBackspace)
-	ui.buttons.u = rl.IsKeyDown(rl.KeyUp)
-	ui.buttons.d = rl.IsKeyDown(rl.KeyDown)
-	ui.buttons.l = rl.IsKeyDown(rl.KeyLeft)
-	ui.buttons.r = rl.IsKeyDown(rl.KeyRight)
-
-	gamepad := int32(1) // Keyboard is gamepad 0
-
-	if rl.IsGamepadAvailable(gamepad) {
-		ui.buttons.a = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonRightFaceRight) || rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonRightFaceUp)
-		ui.buttons.b = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonRightFaceDown) || rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonRightFaceLeft)
-		ui.buttons.st = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonMiddleRight)
-		ui.buttons.sel = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonMiddleLeft)
-		ui.buttons.u = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonLeftFaceUp) || rl.GetGamepadAxisMovement(gamepad, rl.GamepadAxisLeftY) < -0.5
-		ui.buttons.d = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonLeftFaceDown) || rl.GetGamepadAxisMovement(gamepad, rl.GamepadAxisLeftY) > 0.5
-		ui.buttons.l = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonLeftFaceLeft) || rl.GetGamepadAxisMovement(gamepad, rl.GamepadAxisLeftX) < -0.5
-		ui.buttons.r = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonLeftFaceRight) || rl.GetGamepadAxisMovement(gamepad, rl.GamepadAxisLeftX) > 0.5
-	}
+	ui.updateButtonsState()
 
 	dpadPressed, buttonPressed := false, false
 
 	if ui.joypad&0x10 == 0 {
-		dpadPressed = (!prevR && ui.buttons.r) ||
-			(!prevL && ui.buttons.l) ||
-			(!prevU && ui.buttons.u) ||
-			(!prevD && ui.buttons.d)
+		dpadPressed = buttons[UP].justPressed || buttons[DOWN].justPressed || buttons[LEFT].justPressed || buttons[RIGHT].justPressed
 	}
 
 	if ui.joypad&0x20 == 0 {
-		buttonPressed = (!prevA && ui.buttons.a) ||
-			(!prevB && ui.buttons.b) ||
-			(!prevSel && ui.buttons.sel) ||
-			(!prevSt && ui.buttons.st)
+		buttonPressed = buttons[A].justPressed || buttons[B].justPressed || buttons[START].justPressed || buttons[SELECT].justPressed
 	}
 
 	// Trigger interrupt on rising edge
 	if dpadPressed || buttonPressed {
 		ui.CPU.RequestInterrupt(INTERRUPT_CODE)
 	}
+
+	fpsTarget := FPS
+
+	if buttons[SLOWMO].currentlyPressed {
+		fpsTarget = FPS * 0.5
+	}
+
+	if buttons[TURBO].currentlyPressed {
+		fpsTarget = FPS * 4
+	}
+
+	rl.SetTargetFPS(int32(fpsTarget))
+
+	if buttons[PAUSE].justPressed {
+		ui.Console.Pause()
+	}
 }
 
 func (ui *UI) Close() {
 	rl.CloseWindow()
+}
+
+func (ui *UI) updateButtonsState() {
+	for i, b := range buttons {
+		previouslyPressed := b.currentlyPressed
+		currentlyPressed := false
+
+		for _, key := range b.keyboardKeys {
+			currentlyPressed = currentlyPressed || rl.IsKeyDown(key)
+		}
+
+		if rl.IsGamepadAvailable(gamepad) {
+			for _, in := range b.gamepadButtons {
+				currentlyPressed = currentlyPressed || rl.IsGamepadButtonDown(gamepad, in)
+			}
+
+			for _, axis := range b.gamepadAxis {
+				if b.gamepadAxisTrigger != 0 {
+					if b.gamepadAxisTrigger > 0 {
+						currentlyPressed = currentlyPressed || rl.GetGamepadAxisMovement(gamepad, axis) > b.gamepadAxisTrigger
+					} else {
+						currentlyPressed = currentlyPressed || rl.GetGamepadAxisMovement(gamepad, axis) < b.gamepadAxisTrigger
+					}
+				}
+			}
+		}
+
+		buttons[i].currentlyPressed = currentlyPressed
+		buttons[i].justPressed = !previouslyPressed && currentlyPressed
+	}
 }

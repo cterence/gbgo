@@ -44,6 +44,7 @@ type console struct {
 
 	headless bool
 	stopped  bool
+	paused   bool
 }
 
 type Option func(*console)
@@ -138,14 +139,20 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	for {
 		cycles := 0
 
-		if !gb.stopped {
+		if !gb.stopped && !gb.paused {
 			cycles = gb.cpu.Step()
 			gb.timer.Step(cycles)
 		}
 
-		gb.serial.Step(cycles)
-		gb.dma.Step(cycles)
-		gb.ppu.Step(cycles)
+		if !gb.paused {
+			gb.serial.Step(cycles)
+			gb.dma.Step(cycles)
+			gb.ppu.Step(cycles)
+		}
+
+		if gb.paused {
+			cycles = 4
+		}
 
 		uiCycles += cycles
 		if !gb.headless && uiCycles >= FRAME_CYCLES {
@@ -195,6 +202,15 @@ func Disassemble(romBytes []uint8) error {
 func (gb *console) Shutdown() {
 	log.Debug("[console] shutdown")
 	gb.cancel()
+}
+
+func (gb *console) Pause() {
+	gb.paused = !gb.paused
+	if gb.paused {
+		log.Debug("[console] paused")
+	} else {
+		log.Debug("[console] unpaused")
+	}
 }
 
 func (gb *console) Stop() {
