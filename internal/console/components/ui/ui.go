@@ -71,6 +71,7 @@ func (ui *UI) Init() {
 	rl.SetConfigFlags(rl.FlagWindowResizable)
 	rl.InitWindow(WIDTH*INITIAL_SCALE, HEIGHT*INITIAL_SCALE, "gbgo")
 	rl.SetTargetFPS(FPS)
+	rl.HideCursor()
 
 	ui.img = rl.GenImageColor(WIDTH, HEIGHT, rl.Black)
 	ui.texture = rl.LoadTextureFromImage(ui.img)
