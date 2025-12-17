@@ -68,7 +68,7 @@ func WithBootROM() Option {
 	}
 }
 
-func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
+func Run(ctx context.Context, romBytes []uint8, romTitle string, options ...Option) error {
 	gbCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -122,7 +122,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 	gb.serial.Init(gb.serialOptions...)
 
 	if !gb.headless {
-		gb.ui.Init()
+		gb.ui.Init(romTitle)
 	}
 
 	for i, b := range romBytes {
@@ -151,7 +151,7 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 
 		uiCycles += cycles
 		if !gb.headless && uiCycles >= FRAME_CYCLES {
-			gb.ui.Step()
+			gb.ui.Step(cycles)
 
 			uiCycles = 0
 		}

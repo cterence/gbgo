@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -69,11 +70,19 @@ type UI struct {
 	PPU     ppu
 	CPU     cpu
 
-	img     *rl.Image
-	pixels  []rl.Color
-	texture rl.Texture2D
+	img         *rl.Image
+	windowTitle string
+	pixels      []rl.Color
+
+	cycles    uint64
+	cpuCycles uint64
+	texture   rl.Texture2D
+
+	currentFPS int32
 
 	joypad uint8
+
+	paused bool
 }
 
 var palette = [4]rl.Color{
@@ -152,10 +161,12 @@ var buttons = []buttonState{
 // TODO: better system for choosing controller
 var gamepad = int32(1)
 
-func (ui *UI) Init() {
+func (ui *UI) Init(romTitle string) {
+	ui.windowTitle = "gbgo - " + romTitle
+
 	rl.SetTraceLogLevel(rl.LogError)
 	rl.SetConfigFlags(rl.FlagWindowResizable)
-	rl.InitWindow(WIDTH*INITIAL_SCALE, HEIGHT*INITIAL_SCALE, "gbgo")
+	rl.InitWindow(WIDTH*INITIAL_SCALE, HEIGHT*INITIAL_SCALE, ui.windowTitle)
 	rl.SetTargetFPS(FPS)
 	rl.HideCursor()
 
@@ -223,9 +234,13 @@ func (ui *UI) Write(addr uint16, value uint8) {
 	}
 }
 
-func (ui *UI) Step() {
+func (ui *UI) Step(cycles int) {
+	ui.cpuCycles += uint64(cycles)
+
 	ui.drawFrameBuffer()
 	ui.handleEvents()
+
+	ui.cycles++
 }
 
 func (ui *UI) drawFrameBuffer() {
@@ -287,7 +302,21 @@ func (ui *UI) handleEvents() {
 	rl.SetTargetFPS(int32(fpsTarget))
 
 	if buttons[PAUSE].justPressed {
+		ui.paused = !ui.paused
 		ui.Console.Pause()
+
+		if ui.paused {
+			rl.SetWindowTitle(ui.windowTitle + " - PAUSED")
+		} else {
+			ui.updateTitleFPS()
+		}
+	}
+
+	ui.currentFPS = rl.GetFPS()
+
+	// Update FPS in title every second
+	if !ui.paused && ui.cycles%uint64(fpsTarget) == 0 {
+		ui.updateTitleFPS()
 	}
 }
 
@@ -323,4 +352,15 @@ func (ui *UI) updateButtonsState() {
 		buttons[i].currentlyPressed = currentlyPressed
 		buttons[i].justPressed = !previouslyPressed && currentlyPressed
 	}
+}
+
+func (ui *UI) updateTitleFPS() {
+	fps := strconv.FormatInt(int64(ui.currentFPS), 10)
+
+	// Don't show first FPS measurement as it's imprecise
+	if ui.cycles == 0 {
+		fps = "..."
+	}
+
+	rl.SetWindowTitle(ui.windowTitle + " - " + fps + " FPS")
 }

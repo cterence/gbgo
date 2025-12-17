@@ -10,6 +10,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cterence/gbgo/internal/console"
 	"github.com/cterence/gbgo/internal/log"
@@ -120,7 +121,10 @@ func main() {
 				}
 			}
 
-			return console.Run(ctx, romBytes, opts...)
+			romFile := filepath.Base(romPath)
+			romTitle := strings.ReplaceAll(romFile, filepath.Ext(romFile), "")
+
+			return console.Run(ctx, romBytes, romTitle, opts...)
 		},
 		Commands: []*cli.Command{
 			{

@@ -33,5 +33,8 @@ go.work.sum
 
 .pre-commit-config.yaml
 .direnv/
+roms
 roms/
 gbgo
+*.gb
+*.zip
