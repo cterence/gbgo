@@ -31,9 +31,9 @@ type Serial struct {
 
 type Option func(*Serial)
 
-func WithPrintSerial(printSerial bool) Option {
+func WithPrintSerial() Option {
 	return func(s *Serial) {
-		s.print = printSerial
+		s.print = true
 	}
 }
 

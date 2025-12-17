@@ -17,11 +17,7 @@ import (
 )
 
 func main() {
-	var (
-		headless    bool
-		printSerial bool
-		useBootROM  bool
-	)
+	var opts []console.Option
 
 	cmd := &cli.Command{
 		Name:  "gbgo",
@@ -52,24 +48,36 @@ func main() {
 			},
 
 			&cli.BoolFlag{
-				Name:        "boot",
-				Aliases:     []string{"b"},
-				Usage:       "use bootrom",
-				Destination: &useBootROM,
+				Name:    "boot",
+				Aliases: []string{"b"},
+				Usage:   "use bootrom",
+				Action: func(_ context.Context, _ *cli.Command, b bool) error {
+					opts = append(opts, console.WithBootROM())
+
+					return nil
+				},
 			},
 
 			&cli.BoolFlag{
-				Name:        "print-serial",
-				Aliases:     []string{"ps"},
-				Usage:       "print serial output to console",
-				Destination: &printSerial,
+				Name:    "print-serial",
+				Aliases: []string{"ps"},
+				Usage:   "print serial output to console",
+				Action: func(_ context.Context, _ *cli.Command, b bool) error {
+					opts = append(opts, console.WithPrintSerial())
+
+					return nil
+				},
 			},
 
 			&cli.BoolFlag{
-				Name:        "headless",
-				Aliases:     []string{"hl"},
-				Usage:       "run without UI",
-				Destination: &headless,
+				Name:    "headless",
+				Aliases: []string{"hl"},
+				Usage:   "run without UI",
+				Action: func(_ context.Context, _ *cli.Command, b bool) error {
+					opts = append(opts, console.WithHeadless())
+
+					return nil
+				},
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -112,13 +120,7 @@ func main() {
 				}
 			}
 
-			return console.Run(
-				ctx,
-				romBytes,
-				console.WithHeadless(headless),
-				console.WithPrintSerial(printSerial),
-				console.WithBootROM(useBootROM),
-			)
+			return console.Run(ctx, romBytes, opts...)
 		},
 		Commands: []*cli.Command{
 			{

@@ -49,22 +49,22 @@ type console struct {
 
 type Option func(*console)
 
-func WithHeadless(headless bool) Option {
+func WithHeadless() Option {
 	return func(c *console) {
-		c.headless = headless
+		c.headless = true
 	}
 }
 
-func WithPrintSerial(printSerial bool) Option {
+func WithPrintSerial() Option {
 	return func(c *console) {
-		c.serialOptions = append(c.serialOptions, serial.WithPrintSerial(printSerial))
+		c.serialOptions = append(c.serialOptions, serial.WithPrintSerial())
 	}
 }
 
-func WithBootROM(useBootROM bool) Option {
+func WithBootROM() Option {
 	return func(c *console) {
-		c.busOptions = append(c.busOptions, bus.WithBootROM(useBootROM))
-		c.cpuOptions = append(c.cpuOptions, cpu.WithBootROM(useBootROM))
+		c.busOptions = append(c.busOptions, bus.WithBootROM())
+		c.cpuOptions = append(c.cpuOptions, cpu.WithBootROM())
 	}
 }
 
@@ -115,20 +115,15 @@ func Run(ctx context.Context, romBytes []uint8, options ...Option) error {
 		return fmt.Errorf("failed to init cartridge: %w", err)
 	}
 
+	gb.cpu.Init(gb.cpuOptions...)
 	gb.bus.Init(gb.busOptions...)
-
-	err = gb.cpu.Init(gb.cpuOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to init CPU: %w", err)
-	}
+	gb.timer.Init()
+	gb.ppu.Init()
+	gb.serial.Init(gb.serialOptions...)
 
 	if !gb.headless {
 		gb.ui.Init()
 	}
-
-	gb.timer.Init()
-	gb.ppu.Init()
-	gb.serial.Init(gb.serialOptions...)
 
 	for i, b := range romBytes {
 		gb.cartridge.Load(uint32(i), b)

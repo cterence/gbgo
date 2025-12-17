@@ -57,9 +57,9 @@ func WithDebug(debug bool) Option {
 	}
 }
 
-func WithBootROM(useBootROM bool) Option {
+func WithBootROM() Option {
 	return func(c *CPU) {
-		c.useBootROM = useBootROM
+		c.useBootROM = true
 	}
 }
 
@@ -68,13 +68,13 @@ func (c *CPU) String() string {
 	// return fmt.Sprintf("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
 }
 
-func (c *CPU) Init(options ...Option) error {
+func (c *CPU) Init(options ...Option) {
 	for _, o := range options {
 		o(c)
 	}
 
 	if err := ParseOpcodes(); err != nil {
-		return fmt.Errorf("failed to parse CPU opcodes: %w", err)
+		panic(fmt.Errorf("failed to parse CPU opcodes: %w", err))
 	}
 
 	c.bindOpcodeFuncs()
@@ -102,8 +102,6 @@ func (c *CPU) Init(options ...Option) error {
 		c.h = 0
 		c.l = 0
 	}
-
-	return nil
 }
 
 func (c *CPU) Step() int {
