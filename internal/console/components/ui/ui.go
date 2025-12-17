@@ -49,11 +49,10 @@ type UI struct {
 }
 
 const (
-	WIDTH       = 160
-	HEIGHT      = 144
-	PIXEL_BYTES = 4
-	SCALE       = 4
-	FPS         = 60
+	WIDTH         = 160
+	HEIGHT        = 144
+	INITIAL_SCALE = 4
+	FPS           = 60
 
 	INTERRUPT_CODE = 0x10
 
@@ -69,11 +68,13 @@ var palette = [4]rl.Color{
 
 func (ui *UI) Init() {
 	rl.SetTraceLogLevel(rl.LogError)
-	rl.InitWindow(WIDTH*SCALE, HEIGHT*SCALE, "gbgo")
+	rl.SetConfigFlags(rl.FlagWindowResizable)
+	rl.InitWindow(WIDTH*INITIAL_SCALE, HEIGHT*INITIAL_SCALE, "gbgo")
 	rl.SetTargetFPS(FPS)
 
 	ui.img = rl.GenImageColor(WIDTH, HEIGHT, rl.Black)
 	ui.texture = rl.LoadTextureFromImage(ui.img)
+	rl.SetTextureFilter(ui.texture, rl.FilterPoint)
 	ui.pixels = make([]rl.Color, WIDTH*HEIGHT)
 
 	ui.joypad = 0xCF
@@ -152,8 +153,12 @@ func (ui *UI) drawFrameBuffer() {
 		}
 	}
 
+	currentScale := min(float32(rl.GetScreenWidth())/WIDTH, float32(rl.GetScreenHeight())/HEIGHT)
+	src := rl.Rectangle{X: 0, Y: 0, Width: WIDTH, Height: HEIGHT}
+	dst := rl.Rectangle{X: (float32(rl.GetScreenWidth()) - WIDTH*currentScale) / 2, Y: (float32(rl.GetScreenHeight()) - HEIGHT*currentScale) / 2, Width: WIDTH * currentScale, Height: HEIGHT * currentScale}
+
 	rl.UpdateTexture(ui.texture, ui.pixels[:])
-	rl.DrawTextureEx(ui.texture, rl.Vector2{X: 0, Y: 0}, 0, SCALE, rl.White)
+	rl.DrawTexturePro(ui.texture, src, dst, rl.Vector2{X: 0, Y: 0}, 0, rl.White)
 
 	rl.EndDrawing()
 }
@@ -172,14 +177,27 @@ func (ui *UI) handleEvents() {
 	prevSt := ui.buttons.st
 	prevD := ui.buttons.d
 
-	ui.buttons.a = rl.IsKeyDown(rl.KeyA)
-	ui.buttons.b = rl.IsKeyDown(rl.KeyD)
-	ui.buttons.st = rl.IsKeyDown(rl.KeyZ)
-	ui.buttons.sel = rl.IsKeyDown(rl.KeyC)
+	ui.buttons.a = rl.IsKeyDown(rl.KeyX)
+	ui.buttons.b = rl.IsKeyDown(rl.KeyZ)
+	ui.buttons.st = rl.IsKeyDown(rl.KeyEnter)
+	ui.buttons.sel = rl.IsKeyDown(rl.KeyBackspace)
 	ui.buttons.u = rl.IsKeyDown(rl.KeyUp)
 	ui.buttons.d = rl.IsKeyDown(rl.KeyDown)
-	ui.buttons.r = rl.IsKeyDown(rl.KeyRight)
 	ui.buttons.l = rl.IsKeyDown(rl.KeyLeft)
+	ui.buttons.r = rl.IsKeyDown(rl.KeyRight)
+
+	gamepad := int32(1) // Keyboard is gamepad 0
+
+	if rl.IsGamepadAvailable(gamepad) {
+		ui.buttons.a = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonRightFaceRight) || rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonRightFaceUp)
+		ui.buttons.b = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonRightFaceDown) || rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonRightFaceLeft)
+		ui.buttons.st = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonMiddleRight)
+		ui.buttons.sel = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonMiddleLeft)
+		ui.buttons.u = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonLeftFaceUp) || rl.GetGamepadAxisMovement(gamepad, rl.GamepadAxisLeftY) < -0.5
+		ui.buttons.d = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonLeftFaceDown) || rl.GetGamepadAxisMovement(gamepad, rl.GamepadAxisLeftY) > 0.5
+		ui.buttons.l = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonLeftFaceLeft) || rl.GetGamepadAxisMovement(gamepad, rl.GamepadAxisLeftX) < -0.5
+		ui.buttons.r = rl.IsGamepadButtonDown(gamepad, rl.GamepadButtonLeftFaceRight) || rl.GetGamepadAxisMovement(gamepad, rl.GamepadAxisLeftX) > 0.5
+	}
 
 	dpadPressed, buttonPressed := false, false
 
