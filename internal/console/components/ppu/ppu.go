@@ -201,7 +201,7 @@ func (p *PPU) ToggleDMAActive(active bool) {
 	p.dmaActive = active
 }
 
-var bgTileMapAreas = [2]uint16{0x9800, 0x9C00}
+var tileMapAreas = [2]uint16{0x9800, 0x9C00}
 
 func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
 	return p.frameBuffer
@@ -209,6 +209,18 @@ func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
 
 func (p *PPU) Step(cycles int) {
 	p.cycles += cycles
+
+	// Disable LCD / PPU
+	if p.lcdc&0x80 == 0 {
+		// Clear framebuffer
+		for x := range WIDTH {
+			for y := range HEIGHT {
+				p.frameBuffer[x][y] = 0
+			}
+		}
+
+		return
+	}
 
 	switch p.getPPUMode() {
 	case OAM_SCAN:
@@ -239,7 +251,7 @@ func (p *PPU) Step(cycles int) {
 			for row := range WIDTH / 8 {
 				tileX := uint8(row*8) + p.scx
 				tileY := p.ly + p.scy
-				tilePixelRow := p.getBGTilePixelRow(tileX, tileY)
+				tilePixelRow := p.getBGWTilePixelRow(tileX, tileY)
 
 				for b := range 8 {
 					x := row*8 + b
@@ -357,7 +369,7 @@ func (p *PPU) setLYEqLYC(value uint8) {
 	p.stat = (p.stat &^ 0x4) | value<<2
 }
 
-func (p *PPU) getBGTilePixelRow(x, y uint8) [8]uint8 {
+func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
 	var (
 		tileAddr     uint16
 		tilePixelRow [8]uint8
@@ -367,8 +379,17 @@ func (p *PPU) getBGTilePixelRow(x, y uint8) [8]uint8 {
 	tileRow := y % 8
 	tileX := x / 8
 
-	bgTileMapArea := bgTileMapAreas[p.lcdc>>3&1]
-	tileMapIdx := bgTileMapArea + uint16(tileX) + uint16(tileY)*32
+	// Select BG tile map
+	tileMapSelector := (p.lcdc >> 3) & 1
+
+	// If window enable
+	if p.lcdc&0x20 != 0 {
+		// Select window tile map
+		tileMapSelector = (p.lcdc >> 6) & 1
+	}
+
+	tileMapArea := tileMapAreas[tileMapSelector]
+	tileMapIdx := tileMapArea + uint16(tileX) + uint16(tileY)*32
 	tileIdx := p.vram[tileMapIdx-VRAM_START]
 
 	if p.lcdc&0x10 != 0 {

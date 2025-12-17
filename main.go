@@ -1,11 +1,15 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"path/filepath"
 
 	"github.com/cterence/gbgo/internal/console"
 	"github.com/cterence/gbgo/internal/log"
@@ -79,6 +83,33 @@ func main() {
 			romBytes, err := os.ReadFile(romPath)
 			if err != nil {
 				return err
+			}
+
+			if filepath.Ext(romPath) == ".zip" {
+				bytesReader := bytes.NewReader(romBytes)
+
+				r, err := zip.NewReader(bytesReader, int64(len(romBytes)))
+				if err != nil {
+					return fmt.Errorf("failed to create zip reader: %w", err)
+				}
+
+				for _, f := range r.File {
+					if filepath.Ext(f.Name) == ".gb" {
+						rc, err := f.Open()
+						if err != nil {
+							return fmt.Errorf("failed to open file %s in zip archive: %w", f.Name, err)
+						}
+
+						romBytes, err = io.ReadAll(rc)
+						if err != nil {
+							return fmt.Errorf("failed to read file %s bytes: %w", f.Name, err)
+						}
+
+						log.Debug("[main] read file %s in archive", f.Name)
+
+						break // Only read one .gb file
+					}
+				}
 			}
 
 			return console.Run(

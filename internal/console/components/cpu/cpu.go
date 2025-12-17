@@ -2,8 +2,6 @@ package cpu
 
 import (
 	"fmt"
-
-	"github.com/cterence/gbgo/internal/log"
 )
 
 type bus interface {
@@ -119,15 +117,16 @@ func (c *CPU) Step() int {
 		}
 	}
 
-	if log.DebugEnabled {
-		fmt.Println(c)
-	}
-
 	if c.ime && (c.ie&c.iff) != 0 {
 		cycles = c.handleInterrupts()
 	}
 
 	opcode := c.getOpcode()
+
+	// TODO: fix pc being off by one because of fetchByte()
+	// if log.DebugEnabled {
+	// 	fmt.Println(c)
+	// }
 
 	cycles += opcode.Func(opcode)
 
