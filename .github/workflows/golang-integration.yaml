@@ -36,9 +36,6 @@ jobs:
           packages: libgl1-mesa-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev libwayland-dev libxkbcommon-dev
           version: 1.0
 
-      - name: Install go dependencies
-        run: go mod download
-
       - name: Build
         run: CGO_ENABLED=1 go build
 
@@ -51,4 +48,4 @@ jobs:
           version: v2.5
 
       - name: Run tests
-        run: go test -v ./...
+        run: go test ./...

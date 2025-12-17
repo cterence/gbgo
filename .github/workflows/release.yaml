@@ -1,0 +1,79 @@
+name: Build Latest
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.25"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: ["386", amd64, arm64]
+        exclude:
+          - goarch: "386"
+            goos: darwin
+          - goarch: arm64
+            goos: windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install raylib dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libgl1-mesa-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev libwayland-dev libxkbcommon-dev
+          version: 1.0
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          ext=""
+          if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
+          go build -o gbgo-${{ matrix.goos }}-${{ matrix.goarch }}${ext} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gbgo-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: gbgo-*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Update latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Build
+          prerelease: true
+          files: artifacts/*
+          body: |
+            Automated build from main branch
+            Commit: ${{ github.sha }}
