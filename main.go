@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,12 +49,22 @@ func main() {
 				},
 			},
 
-			&cli.BoolFlag{
-				Name:    "boot",
-				Aliases: []string{"b"},
-				Usage:   "use bootrom",
-				Action: func(_ context.Context, _ *cli.Command, b bool) error {
-					opts = append(opts, console.WithBootROM())
+			&cli.StringFlag{
+				Name:      "boot",
+				Aliases:   []string{"b"},
+				Usage:     "path to boot rom file",
+				TakesFile: true,
+				Action: func(_ context.Context, _ *cli.Command, bootRomPath string) error {
+					bootRom, err := os.ReadFile(bootRomPath)
+					if err != nil {
+						return fmt.Errorf("failed to read boot rom file: %w", err)
+					}
+
+					if len(bootRom) == 0 {
+						return errors.New("boot rom is empty")
+					}
+
+					opts = append(opts, console.WithBootROM(bootRom))
 
 					return nil
 				},

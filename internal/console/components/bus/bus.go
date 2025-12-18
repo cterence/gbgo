@@ -1,9 +1,5 @@
 package bus
 
-import (
-	_ "embed"
-)
-
 const (
 	ROM_BANK_0_END = 0x3FFF
 	ROM_BANK_1_END = 0x7FFF
@@ -37,9 +33,6 @@ const (
 	IE   = 0xFFFF
 )
 
-//go:embed dmg.bin
-var dmgBootRom []uint8
-
 type rw interface {
 	Read(addr uint16) uint8
 	Write(addr uint16, value uint8)
@@ -55,15 +48,16 @@ type Bus struct {
 	DMA       rw
 	UI        rw
 
-	bank       uint8
-	useBootRom bool
+	bootRom []uint8
+	bank    uint8
 }
 
 type Option func(*Bus)
 
-func WithBootROM() Option {
+func WithBootROM(bootRom []uint8) Option {
 	return func(b *Bus) {
-		b.useBootRom = true
+		b.bootRom = make([]uint8, len(bootRom))
+		copy(b.bootRom[:], bootRom[:])
 	}
 }
 
@@ -72,7 +66,7 @@ func (b *Bus) Init(options ...Option) {
 		o(b)
 	}
 
-	if !b.useBootRom {
+	if len(b.bootRom) == 0 {
 		b.bank = 1
 		b.Write(0xFF00, 0xCF)
 		b.Write(0xFF01, 0x00)
@@ -120,7 +114,7 @@ func (b *Bus) Init(options ...Option) {
 func (b *Bus) Read(addr uint16) uint8 {
 	switch {
 	case addr <= 0xFF && b.bank == 0:
-		return dmgBootRom[addr]
+		return b.bootRom[addr]
 	case addr <= ROM_BANK_1_END || (addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END):
 		return b.Cartridge.Read(addr)
 	case (addr >= VRAM_START && addr <= VRAM_END) || (addr >= OAM_START && addr <= OAM_END) || (addr >= 0xFF40 && addr <= 0xFF4B && addr != 0xFF46):

@@ -61,9 +61,9 @@ func WithPrintSerial() Option {
 	}
 }
 
-func WithBootROM() Option {
+func WithBootROM(bootRom []uint8) Option {
 	return func(c *console) {
-		c.busOptions = append(c.busOptions, bus.WithBootROM())
+		c.busOptions = append(c.busOptions, bus.WithBootROM(bootRom))
 		c.cpuOptions = append(c.cpuOptions, cpu.WithBootROM())
 	}
 }
