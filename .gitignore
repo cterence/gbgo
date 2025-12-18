@@ -39,3 +39,7 @@ gbgo
 *.gb
 *.zip
 *.bin
+profile.tar.gz
+result
+# Added by goreleaser init:
+dist/

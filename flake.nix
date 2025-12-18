@@ -20,8 +20,6 @@
       supportedSystems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
-        "aarch64-darwin"
       ];
       forEachSupportedSystem =
         f:
@@ -87,6 +85,31 @@
                 pass_filenames = false;
               };
             };
+          };
+        }
+      );
+
+      packages = forEachSupportedSystem (
+        { pkgs }:
+        {
+          default = pkgs.buildGoModule {
+            pname = "gbgo";
+            version = "0.1.0";
+            src = ./.;
+            vendorHash = "sha256-uDOGPUAVrQiFyJaNaIviu5w+9kfMNA/9rwgVidpc/Js=";
+            doCheck = false;
+
+            buildInputs = with pkgs; [
+              go
+              wayland
+              libxkbcommon
+              xorg.libX11
+              xorg.libXcursor
+              xorg.libXrandr
+              xorg.libXinerama
+              xorg.libXi
+              libGL
+            ];
           };
         }
       );

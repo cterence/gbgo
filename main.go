@@ -7,10 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"strings"
 
 	"github.com/cterence/gbgo/internal/console"
@@ -18,24 +17,26 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+const (
+	PPROF_FILE = "./profile.tar.gz"
+)
+
 func main() {
 	var opts []console.Option
+
+	var (
+		runPProf bool
+	)
 
 	cmd := &cli.Command{
 		Name:  "gbgo",
 		Usage: "gameboy emulator",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:    "pprof",
-				Aliases: []string{"p"},
-				Usage:   "run pprof webserver on localhost:6060",
-				Action: func(_ context.Context, _ *cli.Command, _ bool) error {
-					go func() {
-						fmt.Println(http.ListenAndServe("localhost:6060", nil))
-					}()
-
-					return nil
-				},
+				Name:        "pprof",
+				Aliases:     []string{"p"},
+				Usage:       "create pprof file on exit at " + PPROF_FILE,
+				Destination: &runPProf,
 			},
 
 			&cli.BoolFlag{
@@ -93,6 +94,25 @@ func main() {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if runPProf {
+				f, err := os.Create(PPROF_FILE)
+				if err != nil {
+					fmt.Printf("failed to create pprof file: %v\n", err)
+				}
+
+				defer func() {
+					if err := f.Close(); err != nil {
+						fmt.Printf("failed to close pprof file: %v", err)
+					}
+				}()
+
+				if err := pprof.StartCPUProfile(f); err != nil {
+					return fmt.Errorf("failed to start CPU profile: %w", err)
+				}
+
+				defer pprof.StopCPUProfile()
+			}
+
 			romPath := cmd.Args().First()
 
 			if romPath == "" {
@@ -135,7 +155,11 @@ func main() {
 			romFile := filepath.Base(romPath)
 			romTitle := strings.ReplaceAll(romFile, filepath.Ext(romFile), "")
 
-			return console.Run(ctx, romBytes, romTitle, opts...)
+			if err := console.Run(ctx, romBytes, romTitle, opts...); err != nil {
+				return err
+			}
+
+			return nil
 		},
 		Commands: []*cli.Command{
 			{
