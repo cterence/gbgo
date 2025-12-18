@@ -30,16 +30,16 @@ func (f *fifo) fifoPush(p pixel) {
 	f.count++
 }
 
-func (f *fifo) fifoPop() pixel {
+func (f *fifo) fifoPop() (pixel, bool) {
 	if f.count == 0 {
-		return pixel{color: 0xFF, colorIdx: 0xFF}
+		return pixel{}, false
 	}
 
 	p := f.pixels[f.head]
 	f.head = (f.head + 1) % 8
 	f.count--
 
-	return p
+	return p, true
 }
 
 func (f *fifo) clear() {
@@ -195,7 +195,10 @@ func (p *PPU) pushPixelToLCD() {
 		return
 	}
 
-	bgPixel := p.backgroundFIFO.fifoPop()
+	bgPixel, ok := p.backgroundFIFO.fifoPop()
+	if !ok {
+		panic("popped on empty background fifo")
+	}
 
 	if !p.bgwEnabled {
 		bgPixel.color = 0
@@ -204,9 +207,10 @@ func (p *PPU) pushPixelToLCD() {
 
 	var objPixel pixel
 	if p.objectFIFO.count > 0 {
-		objPixel = p.objectFIFO.fifoPop()
-	} else {
-		objPixel.colorIdx = 0
+		objPixel, ok = p.objectFIFO.fifoPop()
+		if !ok {
+			panic("popped on empty object fifo")
+		}
 	}
 
 	finalPixel := bgPixel
