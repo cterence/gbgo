@@ -103,12 +103,12 @@ func Run(ctx context.Context, romBytes []uint8, romTitle string, options ...Opti
 	gb.dma.PPU = gb.ppu
 	gb.ppu.Bus = gb.bus
 	gb.ppu.CPU = gb.cpu
+	gb.ppu.UI = gb.ui
 	gb.serial.CPU = gb.cpu
 	gb.timer.CPU = gb.cpu
 	gb.ui.Bus = gb.bus
 	gb.ui.CPU = gb.cpu
 	gb.ui.Console = &gb
-	gb.ui.PPU = gb.ppu
 
 	err := gb.cartridge.Init(romBytes[0x147], romBytes[0x148])
 	if err != nil {
@@ -142,7 +142,10 @@ func Run(ctx context.Context, romBytes []uint8, romTitle string, options ...Opti
 		if !gb.paused {
 			gb.serial.Step(cycles)
 			gb.dma.Step(cycles)
-			gb.ppu.Step(cycles)
+
+			for range cycles {
+				gb.ppu.Step(1)
+			}
 		}
 
 		if gb.paused {

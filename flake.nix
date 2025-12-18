@@ -60,6 +60,7 @@
               air
               gotools
               gopls
+              mgba
               rgbds
               sameboy
               wla-dx

@@ -2,6 +2,7 @@ package ppu
 
 import (
 	"fmt"
+	"slices"
 )
 
 const (
@@ -58,25 +59,34 @@ type cpu interface {
 	RequestInterrupt(code uint8)
 }
 
+type ui interface {
+	DrawFrameBuffer([WIDTH][HEIGHT]uint8)
+}
+
 type object struct {
 	y       uint8
 	x       uint8
 	tileIdx uint8
 
 	// Attributes
-	priority   bool
-	yFlip      bool
-	xFlip      bool
-	dmgPalette bool
-	cgbBank    bool
-	cgbPalette uint8
+	bgwPriority bool
+	yFlip       bool
+	xFlip       bool
+	dmgPalette  bool
+	cgbBank     bool
+	cgbPalette  uint8
 }
 
 type PPU struct {
 	Bus bus
 	CPU cpu
+	UI  ui
 
-	cycles int
+	// Pixel FIFO / fetcher
+	backgroundFIFO fifo
+	objectFIFO     fifo
+
+	lineCycles int
 
 	frameBuffer [WIDTH][HEIGHT]uint8
 
@@ -84,6 +94,15 @@ type PPU struct {
 	oam         [OAM_SIZE]uint8
 	objects     [10]object
 	objectCount uint8
+
+	// Pixel FIFO variables
+	fetchedX                  uint8
+	pushedX                   uint8
+	windowLineCounter         uint8
+	discardedPixels           uint8
+	fetchedObjects            uint8
+	windowTriggered           bool
+	bgScanlineContainedWindow bool
 
 	// LDCD
 	ppuEnabled    bool
@@ -117,7 +136,9 @@ type PPU struct {
 }
 
 func (p *PPU) Init() {
-	p.cycles = 0
+	p.lineCycles = 0
+	p.setLCDC(0)
+	p.setSTAT(0)
 	p.scy = 0
 	p.scx = 0
 	p.ly = 0
@@ -178,8 +199,9 @@ func (p *PPU) Read(addr uint16) uint8 {
 func (p *PPU) Write(addr uint16, value uint8) {
 	switch {
 	case addr >= VRAM_START && addr <= VRAM_END:
-		// TODO: prevent writes when in DRAW mode (produces jumbled pixels now...)
-		p.vram[addr-VRAM_START] = value
+		if p.ppuMode != DRAW {
+			p.vram[addr-VRAM_START] = value
+		}
 	case addr >= OAM_START && addr <= OAM_END:
 		if !p.dmaActive && p.ppuMode != OAM_SCAN && p.ppuMode != DRAW {
 			p.oam[addr-OAM_START] = value
@@ -229,26 +251,28 @@ func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
 }
 
 func (p *PPU) Step(cycles int) {
-	p.cycles += cycles
+	p.lineCycles += cycles
 
 	// Disable LCD / PPU
 	if !p.ppuEnabled {
-		p.ly = 0
-		p.ppuMode = HBLANK
-
-		// Clear framebuffer
-		for x := range WIDTH {
-			for y := range HEIGHT {
-				p.frameBuffer[x][y] = 0
+		if p.ly != 0 || p.ppuMode != HBLANK {
+			// Clear framebuffer
+			for x := range WIDTH {
+				for y := range HEIGHT {
+					p.frameBuffer[x][y] = 0
+				}
 			}
 		}
+
+		p.ly = 0
+		p.ppuMode = HBLANK
 
 		return
 	}
 
 	switch p.ppuMode {
 	case OAM_SCAN:
-		if p.cycles >= OAM_CYCLES {
+		if p.lineCycles >= OAM_CYCLES {
 			i := 0
 			p.objectCount = 0
 
@@ -267,7 +291,7 @@ func (p *PPU) Step(cycles int) {
 
 					attrs := p.oam[i+3]
 
-					p.objects[p.objectCount].priority = attrs&0x80 != 0
+					p.objects[p.objectCount].bgwPriority = attrs&0x80 != 0
 					p.objects[p.objectCount].yFlip = attrs&0x40 != 0
 					p.objects[p.objectCount].xFlip = attrs&0x20 != 0
 					p.objects[p.objectCount].dmgPalette = attrs&0x10 != 0
@@ -280,100 +304,58 @@ func (p *PPU) Step(cycles int) {
 				i += 4
 			}
 
+			// Sort the objects by x coordinate, stable so that objects scanned first retain priority
+			slices.SortStableFunc(p.objects[:p.objectCount], func(a, b object) int {
+				return int(a.x) - int(b.x)
+			})
+
+			p.lineCycles = 0
+			p.discardedPixels = 0
+			p.fetchedObjects = 0
+			p.pushedX = 0
+			p.fetchedX = 0
+			p.backgroundFIFO.clear()
+			p.objectFIFO.clear()
+			p.windowTriggered = false
+
 			p.ppuMode = DRAW
 		}
 
 	case DRAW:
-		if p.cycles >= 288 {
-			for row := range WIDTH / 8 {
-				tileX := uint8(row * 8)
-				tileY := p.ly
+		for p.fetchedObjects < p.objectCount && p.objects[p.fetchedObjects].x <= p.pushedX+X_OFFSET {
+			p.fetchObjPixels()
+		}
 
-				// Window not enabled : add scroll
-				if !p.windowEnabled {
-					tileX += p.scx
-					tileY += p.scy
-				}
+		p.fetchBGWPixels()
+		p.pushPixelToLCD()
 
-				tilePixelRow := p.getBGWTilePixelRow(tileX, tileY)
-
-				for b := range 8 {
-					x := row*8 + b
-					p.frameBuffer[x][p.ly] = tilePixelRow[b]
-				}
-			}
-
-			for i := range p.objectCount {
-				objIdx := p.objectCount - 1 - i
-				obj := p.objects[objIdx]
-
-				// Skip drawing object if background / window has priority
-				// if obj.attrs&0x80 != 0 {
-				// 	continue
-				// }
-
-				tileIdx := obj.tileIdx
-
-				tileY := p.ly + 16 - obj.y
-				if obj.yFlip {
-					if tileY < 8 {
-						tileIdx &= 0xFE
-					} else {
-						tileIdx |= 0x01
-						tileY -= 8
-					}
-				}
-
-				tileAddr := TILE_BLOCK_0 + uint16(tileIdx)*16
-
-				tileLo := p.vram[tileAddr+uint16(tileY)*2-VRAM_START]
-				tileHi := p.vram[tileAddr+uint16(tileY)*2+1-VRAM_START]
-
-				palette := p.obp0
-				if obj.dmgPalette {
-					palette = p.obp1
-				}
-
-				for b := range 8 {
-					pixelIdx := 7 - b
-					if obj.xFlip {
-						pixelIdx = b
-					}
-
-					loPx := (tileLo >> pixelIdx) & 0x1
-					hiPx := (tileHi >> pixelIdx) & 0x1
-					colorIdx := hiPx<<1 | loPx
-
-					// Transparent pixel
-					if colorIdx == 0 {
-						continue
-					}
-
-					color := (palette >> (colorIdx * 2)) & 0x3
-
-					xDraw := obj.x + uint8(b) - 8
-					if xDraw < WIDTH {
-						p.frameBuffer[xDraw][p.ly] = color
-					}
-				}
-			}
-
+		if p.pushedX >= WIDTH {
 			p.ppuMode = HBLANK
 
 			if p.hblankInt {
 				p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 			}
+
+			break
 		}
 
 	case HBLANK:
-		if p.cycles >= CYCLES_PER_LINE {
-			p.cycles = 0
-
+		if p.lineCycles >= CYCLES_PER_LINE {
+			p.lineCycles = 0
 			p.ly++
+
+			p.checkLYC()
+
+			if p.bgScanlineContainedWindow {
+				p.windowLineCounter++
+				p.bgScanlineContainedWindow = false
+			}
+
 			if p.ly < HEIGHT {
 				p.ppuMode = OAM_SCAN
 			} else {
 				p.ppuMode = VBLANK
+				p.windowLineCounter = 0
 				p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
 
 				if p.vblankInt {
@@ -383,12 +365,15 @@ func (p *PPU) Step(cycles int) {
 		}
 
 	case VBLANK:
-		if p.cycles >= CYCLES_PER_LINE {
-			p.cycles = 0
-
+		if p.lineCycles >= CYCLES_PER_LINE {
+			p.lineCycles = 0
 			p.ly++
+			p.checkLYC()
+
 			if p.ly == LINES_PER_FRAME {
 				p.ppuMode = OAM_SCAN
+				// TODO: probably shoud not be done here, but we're sure that frame is finished
+				p.UI.DrawFrameBuffer(p.frameBuffer)
 
 				p.ly = 0
 				if p.oamInt {
@@ -397,51 +382,6 @@ func (p *PPU) Step(cycles int) {
 			}
 		}
 	}
-
-	p.lycEqLy = p.ly == p.lyc
-
-	if p.lycEqLy && p.lycInt {
-		p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
-	}
-}
-
-func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
-	var tilePixelRow [8]uint8
-
-	tileY := y / 8
-	tileRow := y % 8
-	tileX := x / 8
-
-	// Select BG tile map
-	tileMapSelector := btou8(p.bgTileMap)
-
-	// If window enable
-	if p.windowEnabled && p.ly >= p.wy && x >= p.wx-7 {
-		// Select window tile map
-		tileMapSelector = btou8(p.windowTileMap)
-	}
-
-	tileMapArea := tileMapAreas[tileMapSelector]
-	tileMapIdx := tileMapArea + uint16(tileX) + uint16(tileY)*32
-	tileIdx := p.vram[tileMapIdx-VRAM_START]
-
-	// Select BGW tile data area
-	tileAddr := TILE_BLOCK_0 + uint16(tileIdx)*16
-	if !p.bgwTileData {
-		tileAddr = uint16(int32(TILE_BLOCK_1) + int32(int8(tileIdx))*16)
-	}
-
-	tileLo := p.vram[tileAddr+uint16(tileRow)*2-VRAM_START]
-	tileHi := p.vram[tileAddr+uint16(tileRow)*2+1-VRAM_START]
-
-	for b := range 8 {
-		loPx := (tileLo >> (7 - b)) & 0x1
-		hiPx := (tileHi >> (7 - b)) & 0x1
-		colorIdx := hiPx<<1 | loPx
-		tilePixelRow[b] = (p.bgp >> (colorIdx * 2)) & 0x3
-	}
-
-	return tilePixelRow
 }
 
 func (p *PPU) readLCDC() uint8 {
@@ -496,4 +436,12 @@ func btou8(b bool) uint8 {
 	}
 
 	return 0
+}
+
+func (p *PPU) checkLYC() {
+	p.lycEqLy = p.ly == p.lyc
+
+	if p.lycEqLy && p.lycInt {
+		p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
+	}
 }

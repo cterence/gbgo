@@ -29,10 +29,6 @@ type bus interface {
 	Read(addr uint16) uint8
 }
 
-type ppu interface {
-	GetFrameBuffer() [WIDTH][HEIGHT]uint8
-}
-
 type cpu interface {
 	RequestInterrupt(code uint8)
 }
@@ -67,7 +63,6 @@ const (
 type UI struct {
 	Console console
 	Bus     bus
-	PPU     ppu
 	CPU     cpu
 
 	img         *rl.Image
@@ -237,20 +232,20 @@ func (ui *UI) Write(addr uint16, value uint8) {
 func (ui *UI) Step(cycles int) {
 	ui.cpuCycles += uint64(cycles)
 
-	ui.drawFrameBuffer()
 	ui.handleEvents()
 
 	ui.cycles++
 }
-
-func (ui *UI) drawFrameBuffer() {
-	framebuffer := ui.PPU.GetFrameBuffer()
+func (ui *UI) DrawFrameBuffer(frameBuffer [WIDTH][HEIGHT]uint8) {
+	if ui.img == nil {
+		return
+	}
 
 	rl.BeginDrawing()
 
 	for y := range HEIGHT {
 		for x := range WIDTH {
-			color := palette[framebuffer[x][y]]
+			color := palette[frameBuffer[x][y]]
 			ui.pixels[y*WIDTH+x] = color
 		}
 	}
