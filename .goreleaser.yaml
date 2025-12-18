@@ -18,7 +18,7 @@ builds:
       - -trimpath
       - >-
         {{- if eq .Os "linux" }}-buildmode=pie{{- end }}
-  - env:
+    env:
       - CGO_ENABLED=1
       - >-
         {{- if eq .Os "darwin" }}SDKROOT={{ .Env.SDK_PATH }}{{- end }}

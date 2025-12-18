@@ -29,12 +29,6 @@ jobs:
       - name: Set up zig
         uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406
 
-      - name: Install raylib dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libgl1-mesa-dev libxi-dev libxcursor-dev libxrandr-dev libxinerama-dev libwayland-dev libxkbcommon-dev
-          version: 1.0
-
       - name: Set output
         id: macos_sdk
         run: echo "path=$(xcrun --show-sdk-path)" >> $GITHUB_OUTPUT
