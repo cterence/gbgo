@@ -41,10 +41,10 @@ const (
 	TILE_BLOCK_1 uint16 = 0x9000
 )
 
-type mode uint8
+type ppuMode uint8
 
 const (
-	HBLANK mode = iota
+	HBLANK ppuMode = iota
 	VBLANK
 	OAM_SCAN
 	DRAW
@@ -62,7 +62,14 @@ type object struct {
 	y       uint8
 	x       uint8
 	tileIdx uint8
-	attrs   uint8
+
+	// Attributes
+	priority   bool
+	yFlip      bool
+	xFlip      bool
+	dmgPalette bool
+	cgbBank    bool
+	cgbPalette uint8
 }
 
 type PPU struct {
@@ -78,8 +85,24 @@ type PPU struct {
 	objects     [10]object
 	objectCount uint8
 
-	lcdc uint8
-	stat uint8
+	// LDCD
+	ppuEnabled    bool
+	windowTileMap bool
+	windowEnabled bool
+	bgwTileData   bool
+	bgTileMap     bool
+	objSize       bool
+	objEnabled    bool
+	bgwEnabled    bool
+
+	// STAT
+	lycInt    bool
+	oamInt    bool
+	vblankInt bool
+	hblankInt bool
+	lycEqLy   bool
+	ppuMode   ppuMode
+
 	scy  uint8
 	scx  uint8
 	ly   uint8
@@ -95,8 +118,6 @@ type PPU struct {
 
 func (p *PPU) Init() {
 	p.cycles = 0
-	p.lcdc = 0
-	p.stat = 0
 	p.scy = 0
 	p.scx = 0
 	p.ly = 0
@@ -107,19 +128,19 @@ func (p *PPU) Init() {
 	p.wy = 0
 	p.wx = 0
 
-	p.setPPUMode(OAM_SCAN)
+	p.ppuMode = OAM_SCAN
 }
 
 func (p *PPU) Read(addr uint16) uint8 {
 	switch {
 	case addr >= VRAM_START && addr <= VRAM_END:
-		if p.getPPUMode() == DRAW {
+		if p.ppuMode == DRAW {
 			return 0xFF
 		}
 
 		return p.vram[addr-VRAM_START]
 	case addr >= OAM_START && addr <= OAM_END:
-		if p.dmaActive || (p.getPPUMode() == OAM_SCAN || p.getPPUMode() == DRAW) {
+		if p.dmaActive || (p.ppuMode == OAM_SCAN || p.ppuMode == DRAW) {
 			return 0xFF
 		}
 
@@ -127,9 +148,9 @@ func (p *PPU) Read(addr uint16) uint8 {
 	default:
 		switch addr {
 		case LCDC:
-			return p.lcdc
+			return p.readLCDC()
 		case STAT:
-			return p.stat
+			return p.readSTAT()
 		case SCY:
 			return p.scy
 		case SCX:
@@ -160,15 +181,15 @@ func (p *PPU) Write(addr uint16, value uint8) {
 		// TODO: prevent writes when in DRAW mode (produces jumbled pixels now...)
 		p.vram[addr-VRAM_START] = value
 	case addr >= OAM_START && addr <= OAM_END:
-		if !p.dmaActive && p.getPPUMode() != OAM_SCAN && p.getPPUMode() != DRAW {
+		if !p.dmaActive && p.ppuMode != OAM_SCAN && p.ppuMode != DRAW {
 			p.oam[addr-OAM_START] = value
 		}
 	default:
 		switch addr {
 		case LCDC:
-			p.lcdc = value
+			p.setLCDC(value)
 		case STAT:
-			p.stat = value
+			p.setSTAT(value)
 		case SCY:
 			p.scy = value
 		case SCX:
@@ -211,12 +232,11 @@ func (p *PPU) Step(cycles int) {
 	p.cycles += cycles
 
 	// Disable LCD / PPU
-	// FIXME: blanks out the screen
-	if p.lcdc&0x80 == 0 {
-		// Clear framebuffer
+	if !p.ppuEnabled {
 		p.ly = 0
-		p.setPPUMode(HBLANK)
+		p.ppuMode = HBLANK
 
+		// Clear framebuffer
 		for x := range WIDTH {
 			for y := range HEIGHT {
 				p.frameBuffer[x][y] = 0
@@ -226,7 +246,7 @@ func (p *PPU) Step(cycles int) {
 		return
 	}
 
-	switch p.getPPUMode() {
+	switch p.ppuMode {
 	case OAM_SCAN:
 		if p.cycles >= OAM_CYCLES {
 			i := 0
@@ -235,11 +255,24 @@ func (p *PPU) Step(cycles int) {
 			for i < OAM_SIZE && p.objectCount < 10 {
 				y := p.oam[i]
 
-				if p.ly+16 >= y && p.ly+16 < p.getObjHeight()+y {
+				objSize := uint8(8)
+				if p.objSize {
+					objSize = 16
+				}
+
+				if p.ly+16 >= y && p.ly+16 < objSize+y {
 					p.objects[p.objectCount].y = p.oam[i]
 					p.objects[p.objectCount].x = p.oam[i+1]
 					p.objects[p.objectCount].tileIdx = p.oam[i+2]
-					p.objects[p.objectCount].attrs = p.oam[i+3]
+
+					attrs := p.oam[i+3]
+
+					p.objects[p.objectCount].priority = attrs&0x80 != 0
+					p.objects[p.objectCount].yFlip = attrs&0x40 != 0
+					p.objects[p.objectCount].xFlip = attrs&0x20 != 0
+					p.objects[p.objectCount].dmgPalette = attrs&0x10 != 0
+					p.objects[p.objectCount].cgbBank = attrs&0x08 != 0
+					p.objects[p.objectCount].cgbPalette = attrs & 0x07
 
 					p.objectCount++
 				}
@@ -247,7 +280,7 @@ func (p *PPU) Step(cycles int) {
 				i += 4
 			}
 
-			p.setPPUMode(DRAW)
+			p.ppuMode = DRAW
 		}
 
 	case DRAW:
@@ -257,7 +290,7 @@ func (p *PPU) Step(cycles int) {
 				tileY := p.ly
 
 				// Window not enabled : add scroll
-				if p.lcdc&0x20 == 0 {
+				if !p.windowEnabled {
 					tileX += p.scx
 					tileY += p.scy
 				}
@@ -275,14 +308,14 @@ func (p *PPU) Step(cycles int) {
 				obj := p.objects[objIdx]
 
 				// Skip drawing object if background / window has priority
-				if obj.attrs&0x80 != 0 {
-					continue
-				}
+				// if obj.attrs&0x80 != 0 {
+				// 	continue
+				// }
 
 				tileIdx := obj.tileIdx
 
 				tileY := p.ly + 16 - obj.y
-				if obj.attrs&0x40 != 0 {
+				if obj.yFlip {
 					if tileY < 8 {
 						tileIdx &= 0xFE
 					} else {
@@ -297,13 +330,13 @@ func (p *PPU) Step(cycles int) {
 				tileHi := p.vram[tileAddr+uint16(tileY)*2+1-VRAM_START]
 
 				palette := p.obp0
-				if obj.attrs&0x10 != 0 {
+				if obj.dmgPalette {
 					palette = p.obp1
 				}
 
 				for b := range 8 {
 					pixelIdx := 7 - b
-					if obj.attrs&0x20 != 0 {
+					if obj.xFlip {
 						pixelIdx = b
 					}
 
@@ -325,9 +358,9 @@ func (p *PPU) Step(cycles int) {
 				}
 			}
 
-			p.setPPUMode(HBLANK)
+			p.ppuMode = HBLANK
 
-			if p.stat&0x8 != 0 {
+			if p.hblankInt {
 				p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 			}
 		}
@@ -338,12 +371,12 @@ func (p *PPU) Step(cycles int) {
 
 			p.ly++
 			if p.ly < HEIGHT {
-				p.setPPUMode(OAM_SCAN)
+				p.ppuMode = OAM_SCAN
 			} else {
-				p.setPPUMode(VBLANK)
+				p.ppuMode = VBLANK
 				p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
 
-				if p.stat&0x10 != 0 {
+				if p.vblankInt {
 					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
@@ -355,37 +388,21 @@ func (p *PPU) Step(cycles int) {
 
 			p.ly++
 			if p.ly == LINES_PER_FRAME {
-				p.setPPUMode(OAM_SCAN)
+				p.ppuMode = OAM_SCAN
 
 				p.ly = 0
-				if p.stat&0x20 != 0 {
+				if p.oamInt {
 					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
 		}
 	}
 
-	if p.ly == p.lyc {
-		p.setLYEqLYC(1)
+	p.lycEqLy = p.ly == p.lyc
 
-		if p.stat&0x40 != 0 {
-			p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
-		}
-	} else {
-		p.setLYEqLYC(0)
+	if p.lycEqLy && p.lycInt {
+		p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 	}
-}
-
-func (p *PPU) getPPUMode() mode {
-	return mode(p.stat & 0x3)
-}
-
-func (p *PPU) setPPUMode(mode mode) {
-	p.stat = (p.stat &^ 0x3) | uint8(mode)
-}
-
-func (p *PPU) setLYEqLYC(value uint8) {
-	p.stat = (p.stat &^ 0x4) | value<<2
 }
 
 func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
@@ -396,12 +413,12 @@ func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
 	tileX := x / 8
 
 	// Select BG tile map
-	tileMapSelector := (p.lcdc >> 3) & 1
+	tileMapSelector := btou8(p.bgTileMap)
 
 	// If window enable
-	if p.lcdc&0x20 != 0 && p.ly >= p.wy && x >= p.wx-7 {
+	if p.windowEnabled && p.ly >= p.wy && x >= p.wx-7 {
 		// Select window tile map
-		tileMapSelector = (p.lcdc >> 6) & 1
+		tileMapSelector = btou8(p.windowTileMap)
 	}
 
 	tileMapArea := tileMapAreas[tileMapSelector]
@@ -410,7 +427,7 @@ func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
 
 	// Select BGW tile data area
 	tileAddr := TILE_BLOCK_0 + uint16(tileIdx)*16
-	if p.lcdc&0x10 == 0 {
+	if !p.bgwTileData {
 		tileAddr = uint16(int32(TILE_BLOCK_1) + int32(int8(tileIdx))*16)
 	}
 
@@ -427,10 +444,56 @@ func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
 	return tilePixelRow
 }
 
-func (p *PPU) getObjHeight() uint8 {
-	if p.lcdc&0x4 == 1 {
-		return 16
+func (p *PPU) readLCDC() uint8 {
+	var value uint8
+
+	value |= btou8(p.ppuEnabled) << 7
+	value |= btou8(p.windowTileMap) << 6
+	value |= btou8(p.windowEnabled) << 5
+	value |= btou8(p.bgwTileData) << 4
+	value |= btou8(p.bgTileMap) << 3
+	value |= btou8(p.objSize) << 2
+	value |= btou8(p.objEnabled) << 1
+	value |= btou8(p.bgwEnabled)
+
+	return value
+}
+
+func (p *PPU) setLCDC(value uint8) {
+	p.ppuEnabled = value&0x80 != 0
+	p.windowTileMap = value&0x40 != 0
+	p.windowEnabled = value&0x20 != 0
+	p.bgwTileData = value&0x10 != 0
+	p.bgTileMap = value&0x08 != 0
+	p.objSize = value&0x04 != 0
+	p.objEnabled = value&0x02 != 0
+	p.bgwEnabled = value&0x01 != 0
+}
+
+func (p *PPU) readSTAT() uint8 {
+	var value uint8
+
+	value |= btou8(p.lycInt) << 6
+	value |= btou8(p.oamInt) << 5
+	value |= btou8(p.vblankInt) << 4
+	value |= btou8(p.hblankInt) << 3
+	value |= btou8(p.lycEqLy) << 2
+	value |= uint8(p.ppuMode)
+
+	return value
+}
+
+func (p *PPU) setSTAT(value uint8) {
+	p.lycInt = value&0x40 != 0
+	p.oamInt = value&0x20 != 0
+	p.vblankInt = value&0x10 != 0
+	p.hblankInt = value&0x08 != 0
+}
+
+func btou8(b bool) uint8 {
+	if b {
+		return 1
 	}
 
-	return 8
+	return 0
 }
