@@ -212,16 +212,19 @@ func (p *PPU) Step(cycles int) {
 
 	// Disable LCD / PPU
 	// FIXME: blanks out the screen
-	// if p.lcdc&0x80 == 0 {
-	// 	// Clear framebuffer
-	// 	for x := range WIDTH {
-	// 		for y := range HEIGHT {
-	// 			p.frameBuffer[x][y] = 0
-	// 		}
-	// 	}
+	if p.lcdc&0x80 == 0 {
+		// Clear framebuffer
+		p.ly = 0
+		p.setPPUMode(HBLANK)
 
-	// 	return
-	// }
+		for x := range WIDTH {
+			for y := range HEIGHT {
+				p.frameBuffer[x][y] = 0
+			}
+		}
+
+		return
+	}
 
 	switch p.getPPUMode() {
 	case OAM_SCAN:
@@ -250,8 +253,15 @@ func (p *PPU) Step(cycles int) {
 	case DRAW:
 		if p.cycles >= 288 {
 			for row := range WIDTH / 8 {
-				tileX := uint8(row*8) + p.scx
-				tileY := p.ly + p.scy
+				tileX := uint8(row * 8)
+				tileY := p.ly
+
+				// Window not enabled : add scroll
+				if p.lcdc&0x20 == 0 {
+					tileX += p.scx
+					tileY += p.scy
+				}
+
 				tilePixelRow := p.getBGWTilePixelRow(tileX, tileY)
 
 				for b := range 8 {
@@ -269,14 +279,22 @@ func (p *PPU) Step(cycles int) {
 					continue
 				}
 
-				tileRow := p.ly + 16 - obj.y
+				tileIdx := obj.tileIdx
+
+				tileY := p.ly + 16 - obj.y
 				if obj.attrs&0x40 != 0 {
-					tileRow = p.getObjHeight() - 1 - tileRow
+					if tileY < 8 {
+						tileIdx &= 0xFE
+					} else {
+						tileIdx |= 0x01
+						tileY -= 8
+					}
 				}
 
-				tileAddr := TILE_BLOCK_0 + uint16(obj.tileIdx)*16
-				tileLo := p.vram[tileAddr+uint16(tileRow)*2-VRAM_START]
-				tileHi := p.vram[tileAddr+uint16(tileRow)*2+1-VRAM_START]
+				tileAddr := TILE_BLOCK_0 + uint16(tileIdx)*16
+
+				tileLo := p.vram[tileAddr+uint16(tileY)*2-VRAM_START]
+				tileHi := p.vram[tileAddr+uint16(tileY)*2+1-VRAM_START]
 
 				palette := p.obp0
 				if obj.attrs&0x10 != 0 {
@@ -371,10 +389,7 @@ func (p *PPU) setLYEqLYC(value uint8) {
 }
 
 func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
-	var (
-		tileAddr     uint16
-		tilePixelRow [8]uint8
-	)
+	var tilePixelRow [8]uint8
 
 	tileY := y / 8
 	tileRow := y % 8
@@ -384,7 +399,7 @@ func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
 	tileMapSelector := (p.lcdc >> 3) & 1
 
 	// If window enable
-	if p.lcdc&0x20 != 0 {
+	if p.lcdc&0x20 != 0 && p.ly >= p.wy && x >= p.wx-7 {
 		// Select window tile map
 		tileMapSelector = (p.lcdc >> 6) & 1
 	}
@@ -393,9 +408,9 @@ func (p *PPU) getBGWTilePixelRow(x, y uint8) [8]uint8 {
 	tileMapIdx := tileMapArea + uint16(tileX) + uint16(tileY)*32
 	tileIdx := p.vram[tileMapIdx-VRAM_START]
 
-	if p.lcdc&0x10 != 0 {
-		tileAddr = TILE_BLOCK_0 + uint16(tileIdx)*16
-	} else {
+	// Select BGW tile data area
+	tileAddr := TILE_BLOCK_0 + uint16(tileIdx)*16
+	if p.lcdc&0x10 == 0 {
 		tileAddr = uint16(int32(TILE_BLOCK_1) + int32(int8(tileIdx))*16)
 	}
 

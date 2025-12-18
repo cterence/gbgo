@@ -6,6 +6,7 @@ A Game Boy emulator written in Golang.
 
 - [x] Pause / Resume
 - [x] Turbo / Slowmo modes
+- [ ] CPU debug to file with goroutines
 - [ ] PPU window
 - [ ] Pixel FIFO
 - [ ] Support MBC
