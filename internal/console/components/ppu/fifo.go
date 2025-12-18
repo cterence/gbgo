@@ -14,35 +14,43 @@ type pixel struct {
 }
 
 type fifo struct {
-	pixels []pixel
+	pixels [FIFO_MAX_SIZE]pixel
+	head   int
+	tail   int
+	count  int
 }
 
-func (f *fifo) fifoPush(pixel pixel) {
-	if len(f.pixels) == FIFO_MAX_SIZE {
+func (f *fifo) fifoPush(p pixel) {
+	if f.count == FIFO_MAX_SIZE {
 		return
 	}
 
-	f.pixels = append(f.pixels, pixel)
+	f.pixels[f.tail] = p
+	f.tail = (f.tail + 1) % 8
+	f.count++
 }
 
 func (f *fifo) fifoPop() pixel {
-	if len(f.pixels) == 0 {
-		return pixel{colorIdx: 0xFF, color: 0xFF}
+	if f.count == 0 {
+		return pixel{color: 0xFF, colorIdx: 0xFF}
 	}
 
-	pixel := f.pixels[0]
-	f.pixels = f.pixels[1:]
+	p := f.pixels[f.head]
+	f.head = (f.head + 1) % 8
+	f.count--
 
-	return pixel
+	return p
 }
 
 func (f *fifo) clear() {
-	f.pixels = nil
+	f.count = 0
+	f.head = 0
+	f.tail = 0
 }
 
 func (p *PPU) fetchBGWPixels() {
 	// Only fetch if fifo empty
-	if len(p.backgroundFIFO.pixels) > 0 {
+	if p.backgroundFIFO.count > 0 {
 		return
 	}
 
@@ -103,6 +111,7 @@ func (p *PPU) fetchBGWPixels() {
 }
 
 func (p *PPU) fetchObjPixels() {
+	// Only fetch if fifo empty
 	obj := p.objects[p.fetchedObjects]
 
 	size := uint8(8)
@@ -159,7 +168,7 @@ func (p *PPU) fetchObjPixels() {
 		}
 
 		fifoIdx := px - startPixel
-		if fifoIdx < len(p.objectFIFO.pixels) {
+		if fifoIdx < p.objectFIFO.count {
 			// Only overwrite if existing pixel is transparent
 			if p.objectFIFO.pixels[fifoIdx].colorIdx == 0 {
 				p.objectFIFO.pixels[fifoIdx] = newPixel
@@ -173,7 +182,7 @@ func (p *PPU) fetchObjPixels() {
 }
 
 func (p *PPU) pushPixelToLCD() {
-	if len(p.backgroundFIFO.pixels) == 0 {
+	if p.backgroundFIFO.count == 0 {
 		return
 	}
 
@@ -194,7 +203,7 @@ func (p *PPU) pushPixelToLCD() {
 	}
 
 	var objPixel pixel
-	if len(p.objectFIFO.pixels) > 0 {
+	if p.objectFIFO.count > 0 {
 		objPixel = p.objectFIFO.fifoPop()
 	} else {
 		objPixel.colorIdx = 0
