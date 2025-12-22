@@ -160,7 +160,7 @@ func (ui *UI) Init(romTitle string) {
 	ui.windowTitle = "gbgo - " + romTitle
 
 	rl.SetTraceLogLevel(rl.LogError)
-	rl.SetConfigFlags(rl.FlagWindowResizable)
+	rl.SetConfigFlags(rl.FlagWindowResizable | rl.FlagWindowHighdpi)
 	rl.InitWindow(WIDTH*INITIAL_SCALE, HEIGHT*INITIAL_SCALE, ui.windowTitle)
 	rl.SetTargetFPS(FPS)
 	rl.HideCursor()
