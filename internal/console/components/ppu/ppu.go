@@ -246,10 +246,6 @@ func (p *PPU) ToggleDMAActive(active bool) {
 
 var tileMapAreas = [2]uint16{0x9800, 0x9C00}
 
-func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
-	return p.frameBuffer
-}
-
 func (p *PPU) Step(cycles int) {
 	p.lineCycles += cycles
 

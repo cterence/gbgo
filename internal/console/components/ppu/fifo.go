@@ -62,6 +62,7 @@ func (p *PPU) fetchBGWPixels() {
 
 	tileMapSelector := btou8(p.bgTileMap)
 
+	// Check if we should be fetching a window pixel
 	if !p.windowTriggered && p.windowEnabled && p.wx <= 166 && p.ly >= p.wy && p.fetchedX+7 >= p.wx {
 		p.windowTriggered = true
 		p.bgScanlineContainedWindow = true
@@ -94,7 +95,6 @@ func (p *PPU) fetchBGWPixels() {
 	tileHi := p.vram[tileAddr+tileRow*2+1-VRAM_START]
 
 	// 4. Push to FIFO
-
 	for b := range 8 {
 		loPx := (tileLo >> (7 - b)) & 0x1
 		hiPx := (tileHi >> (7 - b)) & 0x1
@@ -182,22 +182,9 @@ func (p *PPU) fetchObjPixels() {
 }
 
 func (p *PPU) pushPixelToLCD() {
-	if p.backgroundFIFO.count == 0 {
-		return
-	}
-
-	pixelsToDiscard := p.scx % 8
-	if p.discardedPixels < pixelsToDiscard {
-		p.backgroundFIFO.fifoPop()
-		p.objectFIFO.fifoPop()
-		p.discardedPixels++
-
-		return
-	}
-
 	bgPixel, ok := p.backgroundFIFO.fifoPop()
 	if !ok {
-		panic("popped on empty background fifo")
+		return
 	}
 
 	if !p.bgwEnabled {
@@ -205,18 +192,18 @@ func (p *PPU) pushPixelToLCD() {
 		bgPixel.colorIdx = 0
 	}
 
-	var objPixel pixel
-	if p.objectFIFO.count > 0 {
-		objPixel, ok = p.objectFIFO.fifoPop()
-		if !ok {
-			panic("popped on empty object fifo")
+	finalPixel := bgPixel
+
+	objPixel, ok := p.objectFIFO.fifoPop()
+	if ok {
+		if p.objEnabled && objPixel.colorIdx != 0 && (!objPixel.bgwPriority || bgPixel.colorIdx == 0) {
+			finalPixel = objPixel
 		}
 	}
 
-	finalPixel := bgPixel
-
-	if p.objEnabled && objPixel.colorIdx != 0 && (!objPixel.bgwPriority || bgPixel.colorIdx == 0) {
-		finalPixel = objPixel
+	if p.discardedPixels < p.scx%8 {
+		p.discardedPixels++
+		return
 	}
 
 	p.frameBuffer[p.pushedX][p.ly] = finalPixel.color

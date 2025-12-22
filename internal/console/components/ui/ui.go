@@ -65,7 +65,6 @@ type UI struct {
 	Bus     bus
 	CPU     cpu
 
-	img         *rl.Image
 	windowTitle string
 	pixels      []rl.Color
 
@@ -165,8 +164,7 @@ func (ui *UI) Init(romTitle string) {
 	rl.SetTargetFPS(FPS)
 	rl.HideCursor()
 
-	ui.img = rl.GenImageColor(WIDTH, HEIGHT, rl.Black)
-	ui.texture = rl.LoadTextureFromImage(ui.img)
+	ui.texture = rl.LoadTextureFromImage(rl.GenImageColor(WIDTH, HEIGHT, rl.Black))
 	rl.SetTextureFilter(ui.texture, rl.FilterPoint)
 	ui.pixels = make([]rl.Color, WIDTH*HEIGHT)
 
@@ -236,12 +234,11 @@ func (ui *UI) Step(cycles int) {
 
 	ui.cycles++
 }
+
 func (ui *UI) DrawFrameBuffer(frameBuffer [WIDTH][HEIGHT]uint8) {
-	if ui.img == nil {
+	if len(ui.pixels) == 0 {
 		return
 	}
-
-	rl.BeginDrawing()
 
 	for y := range HEIGHT {
 		for x := range WIDTH {
@@ -250,13 +247,28 @@ func (ui *UI) DrawFrameBuffer(frameBuffer [WIDTH][HEIGHT]uint8) {
 		}
 	}
 
-	currentScale := min(float32(rl.GetScreenWidth())/WIDTH, float32(rl.GetScreenHeight())/HEIGHT)
-	src := rl.Rectangle{X: 0, Y: 0, Width: WIDTH, Height: HEIGHT}
-	dst := rl.Rectangle{X: (float32(rl.GetScreenWidth()) - WIDTH*currentScale) / 2, Y: (float32(rl.GetScreenHeight()) - HEIGHT*currentScale) / 2, Width: WIDTH * currentScale, Height: HEIGHT * currentScale}
-
 	rl.UpdateTexture(ui.texture, ui.pixels[:])
-	rl.DrawTexturePro(ui.texture, src, dst, rl.Vector2{X: 0, Y: 0}, 0, rl.White)
 
+	screenW := float32(rl.GetScreenWidth())
+	screenH := float32(rl.GetScreenHeight())
+	currentScale := min(screenW/WIDTH, screenH/HEIGHT)
+
+	src := rl.Rectangle{
+		X:      0,
+		Y:      0,
+		Width:  WIDTH,
+		Height: HEIGHT,
+	}
+
+	dst := rl.Rectangle{
+		X:      (screenW - WIDTH*currentScale) / 2,
+		Y:      (screenH - HEIGHT*currentScale) / 2,
+		Width:  WIDTH * currentScale,
+		Height: HEIGHT * currentScale,
+	}
+
+	rl.BeginDrawing()
+	rl.DrawTexturePro(ui.texture, src, dst, rl.Vector2{}, 0, rl.White)
 	rl.EndDrawing()
 }
 
