@@ -47,7 +47,7 @@ func (c *Cartridge) Read(addr uint16) uint8 {
 
 		return c.banks[c.currentBank][bankAddr]
 	case addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END:
-		return c.ram[addr]
+		return c.ram[addr-EXTERNAL_RAM_START]
 
 	default:
 		panic(fmt.Errorf("out of bounds cartridge read: %x", addr))
