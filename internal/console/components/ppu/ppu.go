@@ -253,7 +253,6 @@ func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
 func (p *PPU) Step(cycles int) {
 	p.lineCycles += cycles
 
-	// Disable LCD / PPU
 	if !p.ppuEnabled {
 		if p.ly != 0 || p.ppuMode != HBLANK {
 			// Clear framebuffer
@@ -273,52 +272,7 @@ func (p *PPU) Step(cycles int) {
 	switch p.ppuMode {
 	case OAM_SCAN:
 		if p.lineCycles >= OAM_CYCLES {
-			i := 0
-			p.objectCount = 0
-
-			for i < OAM_SIZE && p.objectCount < 10 {
-				y := p.oam[i]
-
-				objSize := uint8(8)
-				if p.objSize {
-					objSize = 16
-				}
-
-				if p.ly+16 >= y && p.ly+16 < objSize+y {
-					p.objects[p.objectCount].y = p.oam[i]
-					p.objects[p.objectCount].x = p.oam[i+1]
-					p.objects[p.objectCount].tileIdx = p.oam[i+2]
-
-					attrs := p.oam[i+3]
-
-					p.objects[p.objectCount].bgwPriority = attrs&0x80 != 0
-					p.objects[p.objectCount].yFlip = attrs&0x40 != 0
-					p.objects[p.objectCount].xFlip = attrs&0x20 != 0
-					p.objects[p.objectCount].dmgPalette = attrs&0x10 != 0
-					p.objects[p.objectCount].cgbBank = attrs&0x08 != 0
-					p.objects[p.objectCount].cgbPalette = attrs & 0x07
-
-					p.objectCount++
-				}
-
-				i += 4
-			}
-
-			// Sort the objects by x coordinate, stable so that objects scanned first retain priority
-			slices.SortStableFunc(p.objects[:p.objectCount], func(a, b object) int {
-				return int(a.x) - int(b.x)
-			})
-
-			p.lineCycles = 0
-			p.discardedPixels = 0
-			p.fetchedObjects = 0
-			p.pushedX = 0
-			p.fetchedX = 0
-			p.backgroundFIFO.clear()
-			p.objectFIFO.clear()
-			p.windowTriggered = false
-
-			p.ppuMode = DRAW
+			p.scanOAM()
 		}
 
 	case DRAW:
@@ -382,6 +336,55 @@ func (p *PPU) Step(cycles int) {
 			}
 		}
 	}
+}
+
+func (p *PPU) scanOAM() {
+	i := 0
+	p.objectCount = 0
+
+	for i < OAM_SIZE && p.objectCount < 10 {
+		y := p.oam[i]
+
+		objSize := uint8(8)
+		if p.objSize {
+			objSize = 16
+		}
+
+		if p.ly+Y_OFFSET >= y && p.ly+Y_OFFSET < objSize+y {
+			p.objects[p.objectCount].y = p.oam[i]
+			p.objects[p.objectCount].x = p.oam[i+1]
+			p.objects[p.objectCount].tileIdx = p.oam[i+2]
+
+			attrs := p.oam[i+3]
+
+			p.objects[p.objectCount].bgwPriority = attrs&0x80 != 0
+			p.objects[p.objectCount].yFlip = attrs&0x40 != 0
+			p.objects[p.objectCount].xFlip = attrs&0x20 != 0
+			p.objects[p.objectCount].dmgPalette = attrs&0x10 != 0
+			p.objects[p.objectCount].cgbBank = attrs&0x08 != 0
+			p.objects[p.objectCount].cgbPalette = attrs & 0x07
+
+			p.objectCount++
+		}
+
+		i += 4
+	}
+
+	// Sort the objects by x coordinate, stable so that objects scanned first retain priority
+	slices.SortStableFunc(p.objects[:p.objectCount], func(a, b object) int {
+		return int(a.x) - int(b.x)
+	})
+
+	p.lineCycles = 0
+	p.discardedPixels = 0
+	p.fetchedObjects = 0
+	p.pushedX = 0
+	p.fetchedX = 0
+	p.backgroundFIFO.clear()
+	p.objectFIFO.clear()
+	p.windowTriggered = false
+
+	p.ppuMode = DRAW
 }
 
 func (p *PPU) readLCDC() uint8 {
