@@ -33,6 +33,10 @@ type cpu interface {
 	RequestInterrupt(code uint8)
 }
 
+type ppu interface {
+	GetFrameBuffer() [WIDTH][HEIGHT]uint8
+}
+
 type buttonState struct {
 	keyboardKeys       []int32
 	gamepadButtons     []int32
@@ -64,11 +68,12 @@ type UI struct {
 	Console console
 	Bus     bus
 	CPU     cpu
+	PPU     ppu
 
 	windowTitle string
 	pixels      []rl.Color
 
-	cycles    uint64
+	frames    uint64
 	cpuCycles uint64
 	texture   rl.Texture2D
 
@@ -230,15 +235,18 @@ func (ui *UI) Write(addr uint16, value uint8) {
 func (ui *UI) Step(cycles int) {
 	ui.cpuCycles += uint64(cycles)
 
+	ui.drawFrameBuffer()
 	ui.handleEvents()
 
-	ui.cycles++
+	ui.frames++
 }
 
-func (ui *UI) DrawFrameBuffer(frameBuffer [WIDTH][HEIGHT]uint8) {
+func (ui *UI) drawFrameBuffer() {
 	if len(ui.pixels) == 0 {
 		return
 	}
+
+	frameBuffer := ui.PPU.GetFrameBuffer()
 
 	for y := range HEIGHT {
 		for x := range WIDTH {
@@ -322,7 +330,7 @@ func (ui *UI) handleEvents() {
 	ui.currentFPS = rl.GetFPS()
 
 	// Update FPS in title every second
-	if !ui.paused && ui.cycles%uint64(fpsTarget) == 0 {
+	if !ui.paused && ui.frames%uint64(fpsTarget) == 0 {
 		ui.updateTitleFPS()
 	}
 }
@@ -365,7 +373,7 @@ func (ui *UI) updateTitleFPS() {
 	fps := strconv.FormatInt(int64(ui.currentFPS), 10)
 
 	// Don't show first FPS measurement as it's imprecise
-	if ui.cycles == 0 {
+	if ui.frames == 0 {
 		fps = "..."
 	}
 

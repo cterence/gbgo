@@ -1,10 +1,10 @@
 package ppu
 
 const (
-	X_OFFSET       = 8
-	Y_OFFSET       = 16
-	TILE_BYTE_SIZE = 16
-	FIFO_MAX_SIZE  = 8
+	X_OFFSET        = 8
+	Y_OFFSET        = 16
+	TILE_BYTE_SIZE  = 16
+	PIXEL_FIFO_SIZE = 8
 )
 
 type pixel struct {
@@ -13,36 +13,37 @@ type pixel struct {
 	bgwPriority bool
 }
 
-type fifo struct {
-	pixels [FIFO_MAX_SIZE]pixel
-	head   int
-	tail   int
-	count  int
+type fifo[T any] struct {
+	elements []T
+	head     int
+	tail     int
+	count    int
 }
 
-func (f *fifo) fifoPush(p pixel) {
-	if f.count == FIFO_MAX_SIZE {
+func (f *fifo[T]) push(p T) {
+	if f.count == len(f.elements) {
 		return
 	}
 
-	f.pixels[f.tail] = p
-	f.tail = (f.tail + 1) % 8
+	f.elements[f.tail] = p
+	f.tail = (f.tail + 1) % len(f.elements)
 	f.count++
 }
 
-func (f *fifo) fifoPop() (pixel, bool) {
+func (f *fifo[T]) pop() (T, bool) {
 	if f.count == 0 {
-		return pixel{}, false
+		var zero T
+		return zero, false
 	}
 
-	p := f.pixels[f.head]
-	f.head = (f.head + 1) % 8
+	p := f.elements[f.head]
+	f.head = (f.head + 1) % len(f.elements)
 	f.count--
 
 	return p, true
 }
 
-func (f *fifo) clear() {
+func (f *fifo[T]) clear() {
 	f.count = 0
 	f.head = 0
 	f.tail = 0
@@ -104,7 +105,7 @@ func (p *PPU) fetchBGWPixels() {
 			color:    (p.bgp >> (colorIdx * 2)) & 0x3,
 		}
 
-		p.backgroundFIFO.fifoPush(pixel)
+		p.backgroundFIFO.push(pixel)
 	}
 
 	p.fetchedX += 8
@@ -170,11 +171,11 @@ func (p *PPU) fetchObjPixels() {
 		fifoIdx := px - startPixel
 		if fifoIdx < p.objectFIFO.count {
 			// Only overwrite if existing pixel is transparent
-			if p.objectFIFO.pixels[fifoIdx].colorIdx == 0 {
-				p.objectFIFO.pixels[fifoIdx] = newPixel
+			if p.objectFIFO.elements[fifoIdx].colorIdx == 0 {
+				p.objectFIFO.elements[fifoIdx] = newPixel
 			}
 		} else {
-			p.objectFIFO.fifoPush(newPixel)
+			p.objectFIFO.push(newPixel)
 		}
 	}
 
@@ -182,7 +183,7 @@ func (p *PPU) fetchObjPixels() {
 }
 
 func (p *PPU) pushPixelToLCD() {
-	bgPixel, ok := p.backgroundFIFO.fifoPop()
+	bgPixel, ok := p.backgroundFIFO.pop()
 	if !ok {
 		return
 	}
@@ -194,7 +195,7 @@ func (p *PPU) pushPixelToLCD() {
 
 	finalPixel := bgPixel
 
-	objPixel, ok := p.objectFIFO.fifoPop()
+	objPixel, ok := p.objectFIFO.pop()
 	if ok {
 		if p.objEnabled && objPixel.colorIdx != 0 && (!objPixel.bgwPriority || bgPixel.colorIdx == 0) {
 			finalPixel = objPixel
@@ -206,6 +207,6 @@ func (p *PPU) pushPixelToLCD() {
 		return
 	}
 
-	p.frameBuffer[p.pushedX][p.ly] = finalPixel.color
+	p.currentFrameBuffer[p.pushedX][p.ly] = finalPixel.color
 	p.pushedX++
 }

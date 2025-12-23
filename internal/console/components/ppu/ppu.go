@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	OAM_CYCLES      = 80
-	CYCLES_PER_LINE = 456
-	LINES_PER_FRAME = 154
+	OAM_CYCLES       = 80
+	CYCLES_PER_LINE  = 456
+	LINES_PER_FRAME  = 154
+	FRAMEBUFFER_SIZE = 3
 
 	VBLANK_INTERRUPT_CODE = 0x1
 	STAT_INTERRUPT_CODE   = 0x2
@@ -59,10 +60,6 @@ type cpu interface {
 	RequestInterrupt(code uint8)
 }
 
-type ui interface {
-	DrawFrameBuffer([WIDTH][HEIGHT]uint8)
-}
-
 type object struct {
 	y       uint8
 	x       uint8
@@ -77,18 +74,21 @@ type object struct {
 	cgbPalette  uint8
 }
 
+type frameBuffer [WIDTH][HEIGHT]uint8
+
 type PPU struct {
 	Bus bus
 	CPU cpu
-	UI  ui
 
 	// Pixel FIFO / fetcher
-	backgroundFIFO fifo
-	objectFIFO     fifo
+	backgroundFIFO fifo[pixel]
+	objectFIFO     fifo[pixel]
+
+	frameBufferFIFO fifo[frameBuffer]
 
 	lineCycles int
 
-	frameBuffer [WIDTH][HEIGHT]uint8
+	currentFrameBuffer frameBuffer
 
 	vram        [VRAM_SIZE]uint8
 	oam         [OAM_SIZE]uint8
@@ -133,6 +133,8 @@ type PPU struct {
 	wx   uint8
 
 	dmaActive bool
+
+	frames uint64
 }
 
 func (p *PPU) Init() {
@@ -148,6 +150,10 @@ func (p *PPU) Init() {
 	p.obp1 = 0
 	p.wy = 0
 	p.wx = 0
+
+	p.backgroundFIFO.elements = make([]pixel, PIXEL_FIFO_SIZE)
+	p.objectFIFO.elements = make([]pixel, PIXEL_FIFO_SIZE)
+	p.frameBufferFIFO.elements = make([]frameBuffer, FRAMEBUFFER_SIZE)
 
 	p.ppuMode = OAM_SCAN
 }
@@ -247,23 +253,19 @@ func (p *PPU) ToggleDMAActive(active bool) {
 var tileMapAreas = [2]uint16{0x9800, 0x9C00}
 
 func (p *PPU) Step(cycles int) {
-	p.lineCycles += cycles
-
 	if !p.ppuEnabled {
 		if p.ly != 0 || p.ppuMode != HBLANK {
-			// Clear framebuffer
-			for x := range WIDTH {
-				for y := range HEIGHT {
-					p.frameBuffer[x][y] = 0
-				}
-			}
-		}
+			p.frameBufferFIFO.push(frameBuffer{})
 
-		p.ly = 0
-		p.ppuMode = HBLANK
+			p.ly = 0
+			p.lineCycles = 0
+			p.ppuMode = HBLANK
+		}
 
 		return
 	}
+
+	p.lineCycles += cycles
 
 	switch p.ppuMode {
 	case OAM_SCAN:
@@ -306,6 +308,11 @@ func (p *PPU) Step(cycles int) {
 			} else {
 				p.ppuMode = VBLANK
 				p.windowLineCounter = 0
+
+				p.frameBufferFIFO.push(p.currentFrameBuffer)
+				p.currentFrameBuffer.clear()
+				p.frames++
+
 				p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
 
 				if p.vblankInt {
@@ -322,16 +329,23 @@ func (p *PPU) Step(cycles int) {
 
 			if p.ly == LINES_PER_FRAME {
 				p.ppuMode = OAM_SCAN
-				// TODO: probably shoud not be done here, but we're sure that frame is finished
-				p.UI.DrawFrameBuffer(p.frameBuffer)
-
 				p.ly = 0
+
 				if p.oamInt {
 					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
 		}
 	}
+}
+
+func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
+	fb, ok := p.frameBufferFIFO.pop()
+	if ok {
+		return fb
+	}
+
+	return frameBuffer{}
 }
 
 func (p *PPU) scanOAM() {
@@ -371,7 +385,6 @@ func (p *PPU) scanOAM() {
 		return int(a.x) - int(b.x)
 	})
 
-	p.lineCycles = 0
 	p.discardedPixels = 0
 	p.fetchedObjects = 0
 	p.pushedX = 0
@@ -442,5 +455,13 @@ func (p *PPU) checkLYC() {
 
 	if p.lycEqLy && p.lycInt {
 		p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
+	}
+}
+
+func (f *frameBuffer) clear() {
+	for x := range len(f) {
+		for y := range len(f[0]) {
+			f[x][y] = 0
+		}
 	}
 }

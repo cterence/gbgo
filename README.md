@@ -6,12 +6,14 @@ A Game Boy emulator written in Golang.
 
 - [x] Pause / Resume
 - [x] Turbo / Slowmo modes
+- [x] PPU window
+- [x] Support MBC
+- [x] Pass dmg-acid2 test
+- [x] Frame FIFO
+- [ ] External RAM save
 - [ ] CPU debug to file with goroutines
-- [ ] PPU window
 - [ ] Pixel FIFO
-- [ ] Support MBC
 - [ ] Save states
 - [ ] APU
 - [ ] Release cross-platform binaries (goreleaser)
-- [ ] Pass dmg-acid2 test
 - [ ] Pass mooneye tests

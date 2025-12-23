@@ -5,8 +5,7 @@ import (
 )
 
 const (
-	DMA_ADDR = 0xFF46
-
+	DMA_ADDR  = 0xFF46
 	DMA_BYTES = 0xA0
 )
 
