@@ -2,7 +2,9 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -160,7 +162,9 @@ var buttons = []buttonState{
 // TODO: better system for choosing controller
 var gamepad = int32(1)
 
-func (ui *UI) Init(romTitle string) {
+func (ui *UI) Init(romPath string) {
+	romFile := filepath.Base(romPath)
+	romTitle := strings.ReplaceAll(romFile, filepath.Ext(romFile), "")
 	ui.windowTitle = "gbgo - " + romTitle
 
 	rl.SetTraceLogLevel(rl.LogError)

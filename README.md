@@ -10,9 +10,10 @@ A Game Boy emulator written in Golang.
 - [x] Support MBC
 - [x] Pass dmg-acid2 test
 - [x] Frame FIFO
-- [ ] External RAM save
+- [x] External RAM save
+- [x] Pixel FIFO
+- [ ] Only save external RAM for cartridge with batteries
 - [ ] CPU debug to file with goroutines
-- [ ] Pixel FIFO
 - [ ] Save states
 - [ ] APU
 - [ ] Release cross-platform binaries (goreleaser)

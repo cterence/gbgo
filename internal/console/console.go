@@ -68,7 +68,7 @@ func WithBootROM(bootRom []uint8) Option {
 	}
 }
 
-func Run(ctx context.Context, romBytes []uint8, romTitle string, options ...Option) error {
+func Run(ctx context.Context, romBytes []uint8, romPath string, options ...Option) error {
 	gbCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -110,7 +110,7 @@ func Run(ctx context.Context, romBytes []uint8, romTitle string, options ...Opti
 	gb.ui.Console = &gb
 	gb.ui.PPU = gb.ppu
 
-	err := gb.cartridge.Init(romBytes[0x147], romBytes[0x148])
+	err := gb.cartridge.Init(romPath, romBytes[0x147], romBytes[0x148])
 	if err != nil {
 		return fmt.Errorf("failed to init cartridge: %w", err)
 	}
@@ -122,7 +122,7 @@ func Run(ctx context.Context, romBytes []uint8, romTitle string, options ...Opti
 	gb.serial.Init(gb.serialOptions...)
 
 	if !gb.headless {
-		gb.ui.Init(romTitle)
+		gb.ui.Init(romPath)
 	}
 
 	for i, b := range romBytes {
@@ -198,8 +198,9 @@ func Disassemble(romBytes []uint8) error {
 }
 
 func (gb *console) Shutdown() {
-	log.Debug("[console] shutdown")
 	gb.cancel()
+	gb.cartridge.Close()
+	log.Debug("[console] shutdown")
 }
 
 func (gb *console) Pause() {

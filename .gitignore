@@ -41,5 +41,7 @@ gbgo
 *.bin
 profile.tar.gz
 result
+*.sav
+
 # Added by goreleaser init:
 dist/

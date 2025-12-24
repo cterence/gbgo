@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/pprof"
-	"strings"
 
 	"github.com/cterence/gbgo/internal/console"
 	"github.com/cterence/gbgo/internal/log"
@@ -152,10 +151,7 @@ func main() {
 				}
 			}
 
-			romFile := filepath.Base(romPath)
-			romTitle := strings.ReplaceAll(romFile, filepath.Ext(romFile), "")
-
-			if err := console.Run(ctx, romBytes, romTitle, opts...); err != nil {
+			if err := console.Run(ctx, romBytes, romPath, opts...); err != nil {
 				return err
 			}
 
