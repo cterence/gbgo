@@ -110,7 +110,7 @@ func Run(ctx context.Context, romBytes []uint8, romPath string, options ...Optio
 	gb.ui.Console = &gb
 	gb.ui.PPU = gb.ppu
 
-	err := gb.cartridge.Init(romPath, romBytes[0x147], romBytes[0x148])
+	err := gb.cartridge.Init(romPath, romBytes[0x147], romBytes[0x148], romBytes[0x149])
 	if err != nil {
 		return fmt.Errorf("failed to init cartridge: %w", err)
 	}
