@@ -1,7 +1,11 @@
 package cpu
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
+
+	"github.com/cterence/gbgo/internal/lib"
 )
 
 type bus interface {
@@ -16,31 +20,34 @@ type console interface {
 type CPU struct {
 	Bus     bus
 	Console console
+	state
+}
 
-	currentOpcode *Opcode
+type state struct {
+	CurrentOpcode *Opcode
 
-	pc uint16
-	sp uint16
+	PC uint16
+	SP uint16
 
-	a uint8
-	f uint8
-	b uint8
-	c uint8
-	d uint8
-	e uint8
-	h uint8
-	l uint8
+	A uint8
+	F uint8
+	B uint8
+	C uint8
+	D uint8
+	E uint8
+	H uint8
+	L uint8
 
-	ime          bool
-	imeScheduled bool
-	iff          uint8 // 0xFF0F
-	ie           uint8 // 0xFFFF
-	halted       bool
-	haltBug      bool
+	IME          bool
+	IMEScheduled bool
+	IFF          uint8 // 0xFF0F
+	IE           uint8 // 0xFFFF
+	Halted       bool
+	HaltBug      bool
 
 	// Emulator
-	debug      bool
-	useBootROM bool
+	Debug      bool
+	UseBootROM bool
 }
 
 type Option func(*CPU)
@@ -53,18 +60,18 @@ const (
 
 func WithDebug(debug bool) Option {
 	return func(c *CPU) {
-		c.debug = debug
+		c.Debug = debug
 	}
 }
 
 func WithBootROM() Option {
 	return func(c *CPU) {
-		c.useBootROM = true
+		c.UseBootROM = true
 	}
 }
 
 func (c *CPU) String() string {
-	return fmt.Sprintf("%-12s - A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", c.currentOpcode, c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
+	return fmt.Sprintf("%-12s - A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", c.CurrentOpcode, c.A, c.F, c.B, c.C, c.D, c.E, c.H, c.L, c.SP, c.PC, c.Bus.Read(c.PC), c.Bus.Read(c.PC+1), c.Bus.Read(c.PC+2), c.Bus.Read(c.PC+3))
 	// return fmt.Sprintf("A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", c.a, c.f, c.b, c.c, c.d, c.e, c.h, c.l, c.sp, c.pc, c.Bus.Read(c.pc), c.Bus.Read(c.pc+1), c.Bus.Read(c.pc+2), c.Bus.Read(c.pc+3))
 }
 
@@ -79,43 +86,50 @@ func (c *CPU) Init(options ...Option) {
 
 	c.bindOpcodeFuncs()
 
-	c.pc = 0x0100
-	c.sp = 0xFFFE
-	c.a = 0x01
-	c.f = 0xB0
-	c.b = 0x00
-	c.c = 0x13
-	c.d = 0x00
-	c.e = 0xD8
-	c.h = 0x01
-	c.l = 0x4D
+	c.PC = 0x0100
+	c.SP = 0xFFFE
+	c.A = 0x01
+	c.F = 0xB0
+	c.B = 0x00
+	c.C = 0x13
+	c.D = 0x00
+	c.E = 0xD8
+	c.H = 0x01
+	c.L = 0x4D
 
-	if c.useBootROM {
-		c.pc = 0
-		c.sp = 0
-		c.a = 0
-		c.f = 0
-		c.b = 0
-		c.c = 0
-		c.d = 0
-		c.e = 0
-		c.h = 0
-		c.l = 0
+	if c.UseBootROM {
+		c.PC = 0
+		c.SP = 0
+		c.A = 0
+		c.F = 0
+		c.B = 0
+		c.C = 0
+		c.D = 0
+		c.E = 0
+		c.H = 0
+		c.L = 0
 	}
+
+	c.IME = false
+	c.IMEScheduled = false
+	c.IFF = 0
+	c.IE = 0
+	c.HaltBug = false
+	c.Halted = false
 }
 
 func (c *CPU) Step() int {
 	cycles := 0
 
-	if c.halted {
-		if c.ie&c.iff&0x1F != 0 { // Interrupt pending?
-			c.halted = false
+	if c.Halted {
+		if c.IE&c.IFF&0x1F != 0 { // Interrupt pending?
+			c.Halted = false
 		} else {
 			return 4 // Return base CPU cycle
 		}
 	}
 
-	if c.ime && (c.ie&c.iff) != 0 {
+	if c.IME && (c.IE&c.IFF) != 0 {
 		cycles = c.handleInterrupts()
 	}
 
@@ -128,9 +142,9 @@ func (c *CPU) Step() int {
 
 	cycles += opcode.Func(opcode)
 
-	if c.imeScheduled {
-		c.ime = true
-		c.imeScheduled = false
+	if c.IMEScheduled {
+		c.IME = true
+		c.IMEScheduled = false
 	}
 
 	return cycles
@@ -139,9 +153,9 @@ func (c *CPU) Step() int {
 func (c *CPU) Read(addr uint16) uint8 {
 	switch addr {
 	case IFF:
-		return c.iff | 0xE0
+		return c.IFF | 0xE0
 	case IE:
-		return c.ie
+		return c.IE
 	default:
 		panic(fmt.Errorf("unsupported read on cpu: %x", addr))
 	}
@@ -150,25 +164,39 @@ func (c *CPU) Read(addr uint16) uint8 {
 func (c *CPU) Write(addr uint16, value uint8) {
 	switch addr {
 	case IFF:
-		c.iff = value
+		c.IFF = value
 	case IE:
-		c.ie = value
+		c.IE = value
 	default:
 		panic(fmt.Errorf("unsupported write on cpu: %x", addr))
 	}
 }
 
 func (c *CPU) RequestInterrupt(code uint8) {
-	c.iff |= code
+	c.IFF |= code
+}
+
+func (c *CPU) Load(buf *bytes.Reader) {
+	enc := gob.NewDecoder(buf)
+	err := enc.Decode(&c.state)
+
+	lib.Assert(err == nil, "failed to decode CPU state: %v", err)
+}
+
+func (c *CPU) Save(buf *bytes.Buffer) {
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(c.state)
+
+	lib.Assert(err == nil, "failed to encode CPU state: %v", err)
 }
 
 func (c *CPU) fetchByte() uint8 {
-	val := c.Bus.Read(c.pc)
+	val := c.Bus.Read(c.PC)
 
-	if c.haltBug {
-		c.haltBug = false
+	if c.HaltBug {
+		c.HaltBug = false
 	} else {
-		c.pc++
+		c.PC++
 	}
 
 	return val
@@ -188,7 +216,7 @@ func (c *CPU) getOpcode() *Opcode {
 		opcode = &CBPrefixedOpcodes[c.fetchByte()]
 	}
 
-	c.currentOpcode = opcode
+	c.CurrentOpcode = opcode
 
 	return opcode
 }
@@ -196,25 +224,25 @@ func (c *CPU) getOpcode() *Opcode {
 func (c *CPU) getOp(op string) uint8 {
 	switch op {
 	case "A":
-		return c.a
+		return c.A
 	case "F":
-		return c.f
+		return c.F
 	case "B":
-		return c.b
+		return c.B
 	case "C":
-		return c.c
+		return c.C
 	case "D":
-		return c.d
+		return c.D
 	case "E":
-		return c.e
+		return c.E
 	case "H":
-		return c.h
+		return c.H
 	case "L":
-		return c.l
+		return c.L
 	case "n8":
 		return c.fetchByte()
 	case "HL":
-		return c.Bus.Read(uint16(c.h)<<8 | uint16(c.l))
+		return c.Bus.Read(uint16(c.H)<<8 | uint16(c.L))
 	default:
 		panic("unsupported operand for getOp: " + op)
 	}
@@ -223,23 +251,23 @@ func (c *CPU) getOp(op string) uint8 {
 func (c *CPU) setOp(op string, value uint8) {
 	switch op {
 	case "A":
-		c.a = value
+		c.A = value
 	case "F":
-		c.f = value
+		c.F = value
 	case "B":
-		c.b = value
+		c.B = value
 	case "C":
-		c.c = value
+		c.C = value
 	case "D":
-		c.d = value
+		c.D = value
 	case "E":
-		c.e = value
+		c.E = value
 	case "H":
-		c.h = value
+		c.H = value
 	case "L":
-		c.l = value
+		c.L = value
 	case "HL":
-		c.Bus.Write(uint16(c.h)<<8|uint16(c.l), value)
+		c.Bus.Write(uint16(c.H)<<8|uint16(c.L), value)
 	default:
 		panic("unsupported operand for setOp: " + op)
 	}
@@ -248,15 +276,15 @@ func (c *CPU) setOp(op string, value uint8) {
 func (c *CPU) getDOp(op string) uint16 {
 	switch op {
 	case "AF":
-		return uint16(c.a)<<8 | uint16(c.f)
+		return uint16(c.A)<<8 | uint16(c.F)
 	case "BC":
-		return uint16(c.b)<<8 | uint16(c.c)
+		return uint16(c.B)<<8 | uint16(c.C)
 	case "DE":
-		return uint16(c.d)<<8 | uint16(c.e)
+		return uint16(c.D)<<8 | uint16(c.E)
 	case "HL":
-		return uint16(c.h)<<8 | uint16(c.l)
+		return uint16(c.H)<<8 | uint16(c.L)
 	case "SP":
-		return c.sp
+		return c.SP
 	default:
 		panic("unsupported operand for getDOp: " + op)
 	}
@@ -265,69 +293,69 @@ func (c *CPU) getDOp(op string) uint16 {
 func (c *CPU) setDOp(op string, value uint16) {
 	switch op {
 	case "AF":
-		c.a = uint8(value >> 8)
-		c.f = uint8(value)
+		c.A = uint8(value >> 8)
+		c.F = uint8(value)
 	case "BC":
-		c.b = uint8(value >> 8)
-		c.c = uint8(value)
+		c.B = uint8(value >> 8)
+		c.C = uint8(value)
 	case "DE":
-		c.d = uint8(value >> 8)
-		c.e = uint8(value)
+		c.D = uint8(value >> 8)
+		c.E = uint8(value)
 	case "HL":
-		c.h = uint8(value >> 8)
-		c.l = uint8(value)
+		c.H = uint8(value >> 8)
+		c.L = uint8(value)
 	case "SP":
-		c.sp = value
+		c.SP = value
 	default:
 		panic("unsupported operand for getDOp: " + op)
 	}
 }
 
 func (c *CPU) getZF() bool {
-	return c.f>>7&0x1 == 1
+	return c.F>>7&0x1 == 1
 }
 
 func (c *CPU) getNF() bool {
-	return c.f>>6&0x1 == 1
+	return c.F>>6&0x1 == 1
 }
 
 func (c *CPU) getHF() bool {
-	return c.f>>5&0x1 == 1
+	return c.F>>5&0x1 == 1
 }
 
 func (c *CPU) getCF() bool {
-	return c.f>>4&0x1 == 1
+	return c.F>>4&0x1 == 1
 }
 
 func (c *CPU) setZF(cond bool) {
 	if cond {
-		c.f |= 0x80
+		c.F |= 0x80
 	} else {
-		c.f &= 0x7F
+		c.F &= 0x7F
 	}
 }
 
 func (c *CPU) setNF(cond bool) {
 	if cond {
-		c.f |= 0x40
+		c.F |= 0x40
 	} else {
-		c.f &= 0xBF
+		c.F &= 0xBF
 	}
 }
 
 func (c *CPU) setHF(cond bool) {
 	if cond {
-		c.f |= 0x20
+		c.F |= 0x20
 	} else {
-		c.f &= 0xDF
+		c.F &= 0xDF
 	}
 }
 
 func (c *CPU) setCF(cond bool) {
 	if cond {
-		c.f |= 0x10
+		c.F |= 0x10
 	} else {
-		c.f &= 0xEF
+		c.F &= 0xEF
 	}
 }
 
@@ -339,15 +367,15 @@ func (c *CPU) setFlags(zf, nf, hf, cf bool) {
 }
 
 func (c *CPU) handleInterrupts() int {
-	c.ime = false
-	c.imeScheduled = false
+	c.IME = false
+	c.IMEScheduled = false
 
 	for i := range 5 {
 		mask := uint8(1 << i)
-		if c.ie&c.iff&mask != 0 {
-			c.iff &= ^mask
-			c.pushValue(c.pc)
-			c.pc = INTERRUPTS_START_ADDR + uint16(i*8)
+		if c.IE&c.IFF&mask != 0 {
+			c.IFF &= ^mask
+			c.pushValue(c.PC)
+			c.PC = INTERRUPTS_START_ADDR + uint16(i*8)
 
 			return 20
 		}

@@ -12,21 +12,14 @@ A Game Boy emulator written in Golang.
 - [x] Frame FIFO
 - [x] External RAM save
 - [x] Pixel FIFO
-- [ ] Only save external RAM for cartridge with batteries
-- [ ] Serializable interface for state save
-
-  ```go
-  type Serializable interface {
-    Save(*bytes.Buffer)
-    Load(*bytes.Reader)
-  }
-  ```
-
+- [x] Only save external RAM for cartridge with batteries
+- [x] Serializable interface for state save
+- [x] Central location for storing save / state files
+- [x] Save state
 - [ ] Debug overlay
 - [ ] Runtime assertions
 - [ ] Trace ring buffer
 - [ ] CPU debug to file with goroutines
-- [ ] Save states
 - [ ] APU
 - [ ] Release cross-platform binaries (goreleaser)
 - [ ] Pass mooneye tests

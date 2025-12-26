@@ -1,8 +1,12 @@
 package ppu
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"slices"
+
+	"github.com/cterence/gbgo/internal/lib"
 )
 
 const (
@@ -61,17 +65,17 @@ type cpu interface {
 }
 
 type object struct {
-	y       uint8
-	x       uint8
-	tileIdx uint8
+	Y       uint8
+	X       uint8
+	TileIdx uint8
 
 	// Attributes
-	bgwPriority bool
-	yFlip       bool
-	xFlip       bool
-	dmgPalette  bool
-	cgbBank     bool
-	cgbPalette  uint8
+	BGWPriority bool
+	YFlip       bool
+	XFlip       bool
+	DMGPalette  bool
+	CGBBank     bool
+	CGBPalette  uint8
 }
 
 type frameBuffer [WIDTH][HEIGHT]uint8
@@ -79,99 +83,130 @@ type frameBuffer [WIDTH][HEIGHT]uint8
 type PPU struct {
 	Bus bus
 	CPU cpu
+	state
+}
 
+type state struct {
 	// Pixel FIFO / fetcher
-	backgroundFIFO fifo[pixel]
-	objectFIFO     fifo[pixel]
+	BackgroundFIFO fifo[pixel]
+	ObjectFIFO     fifo[pixel]
 
-	frameBufferFIFO fifo[frameBuffer]
+	FrameBufferFIFO fifo[frameBuffer]
 
-	lineCycles int
+	LineCycles int
 
-	currentFrameBuffer frameBuffer
+	CurrentFrameBuffer frameBuffer
 
-	vram        [VRAM_SIZE]uint8
-	oam         [OAM_SIZE]uint8
-	objects     [10]object
-	objectCount uint8
+	VRAM        [VRAM_SIZE]uint8
+	OAM         [OAM_SIZE]uint8
+	Objects     [10]object
+	ObjectCount uint8
 
 	// Pixel FIFO variables
-	fetchedX                  uint8
-	pushedX                   uint8
-	windowLineCounter         uint8
-	discardedPixels           uint8
-	fetchedObjects            uint8
-	windowTriggered           bool
-	bgScanlineContainedWindow bool
+	FetchedX                  uint8
+	PushedX                   uint8
+	WindowLineCounter         uint8
+	DiscardedPixels           uint8
+	FetchedObjects            uint8
+	WindowTriggered           bool
+	BGScanlineContainedWindow bool
 
 	// LDCD
-	ppuEnabled    bool
-	windowTileMap bool
-	windowEnabled bool
-	bgwTileData   bool
-	bgTileMap     bool
-	objSize       bool
-	objEnabled    bool
-	bgwEnabled    bool
+	PPUEnabled    bool
+	WindowTileMap bool
+	WindowEnabled bool
+	BGWTileData   bool
+	BGTileMap     bool
+	ObjSize       bool
+	ObjEnabled    bool
+	BGWEnabled    bool
 
 	// STAT
-	lycInt    bool
-	oamInt    bool
-	vblankInt bool
-	hblankInt bool
-	lycEqLy   bool
-	ppuMode   ppuMode
+	LYCInt    bool
+	OAMInt    bool
+	VBlankInt bool
+	HBlankInt bool
+	LYCEqLy   bool
+	PPUMode   ppuMode
 
-	scy  uint8
-	scx  uint8
-	ly   uint8
-	lyc  uint8
-	bgp  uint8
-	obp0 uint8
-	obp1 uint8
-	wy   uint8
-	wx   uint8
+	SCY  uint8
+	SCX  uint8
+	LY   uint8
+	LYC  uint8
+	BGP  uint8
+	OBP0 uint8
+	OBP1 uint8
+	WY   uint8
+	WX   uint8
 
-	dmaActive bool
+	DMAActive bool
 
-	frames uint64
+	Frames uint64
 }
 
 func (p *PPU) Init() {
-	p.lineCycles = 0
+	p.LineCycles = 0
 	p.setLCDC(0)
 	p.setSTAT(0)
-	p.scy = 0
-	p.scx = 0
-	p.ly = 0
-	p.lyc = 0
-	p.bgp = 0
-	p.obp0 = 0
-	p.obp1 = 0
-	p.wy = 0
-	p.wx = 0
+	p.SCY = 0
+	p.SCX = 0
+	p.LY = 0
+	p.LYC = 0
+	p.BGP = 0
+	p.OBP0 = 0
+	p.OBP1 = 0
+	p.WY = 0
+	p.WX = 0
+	p.ObjectCount = 0
+	p.FetchedX = 0
+	p.PushedX = 0
+	p.WindowLineCounter = 0
+	p.DiscardedPixels = 0
+	p.FetchedObjects = 0
+	p.WindowTriggered = false
+	p.BGScanlineContainedWindow = false
+	p.PPUEnabled = false
+	p.WindowTileMap = false
+	p.WindowEnabled = false
+	p.BGWTileData = false
+	p.BGTileMap = false
+	p.ObjSize = false
+	p.ObjEnabled = false
+	p.BGWEnabled = false
+	p.DMAActive = false
+	p.Frames = 0
+	p.LYCInt = false
+	p.OAMInt = false
+	p.VBlankInt = false
+	p.HBlankInt = false
+	p.LYCEqLy = false
+	p.PPUMode = OAM_SCAN
+	p.CurrentFrameBuffer = frameBuffer{}
+	p.VRAM = [VRAM_SIZE]uint8{}
+	p.OAM = [OAM_SIZE]uint8{}
+	p.Objects = [10]object{}
 
-	p.backgroundFIFO.elements = make([]pixel, PIXEL_FIFO_SIZE)
-	p.objectFIFO.elements = make([]pixel, PIXEL_FIFO_SIZE)
-	p.frameBufferFIFO.elements = make([]frameBuffer, FRAMEBUFFER_SIZE)
+	p.BackgroundFIFO.Elements = make([]pixel, PIXEL_FIFO_SIZE)
+	p.ObjectFIFO.Elements = make([]pixel, PIXEL_FIFO_SIZE)
+	p.FrameBufferFIFO.Elements = make([]frameBuffer, FRAMEBUFFER_SIZE)
 
-	p.ppuMode = OAM_SCAN
+	p.PPUMode = OAM_SCAN
 }
 
 func (p *PPU) Read(addr uint16) uint8 {
 	switch {
 	case addr >= VRAM_START && addr <= VRAM_END:
-		if p.ppuMode == DRAW {
+		if p.PPUMode == DRAW {
 			return 0xFF
 		}
 
-		return p.vram[addr-VRAM_START]
+		return p.VRAM[addr-VRAM_START]
 	case addr >= OAM_START && addr <= OAM_END:
-		if p.dmaActive || (p.ppuMode == OAM_SCAN || p.ppuMode == DRAW) {
+		if p.DMAActive || (p.PPUMode == OAM_SCAN || p.PPUMode == DRAW) {
 			return 0xFF
 		}
 
-		return p.oam[addr-OAM_START]
+		return p.OAM[addr-OAM_START]
 	default:
 		switch addr {
 		case LCDC:
@@ -179,23 +214,23 @@ func (p *PPU) Read(addr uint16) uint8 {
 		case STAT:
 			return p.readSTAT()
 		case SCY:
-			return p.scy
+			return p.SCY
 		case SCX:
-			return p.scx
+			return p.SCX
 		case LY:
-			return p.ly
+			return p.LY
 		case LYC:
-			return p.lyc
+			return p.LYC
 		case BGP:
-			return p.bgp
+			return p.BGP
 		case OBP0:
-			return p.obp0
+			return p.OBP0
 		case OBP1:
-			return p.obp1
+			return p.OBP1
 		case WY:
-			return p.wy
+			return p.WY
 		case WX:
-			return p.wx
+			return p.WX
 		default:
 			panic(fmt.Errorf("unsupported read for ppu: %x", addr))
 		}
@@ -205,12 +240,12 @@ func (p *PPU) Read(addr uint16) uint8 {
 func (p *PPU) Write(addr uint16, value uint8) {
 	switch {
 	case addr >= VRAM_START && addr <= VRAM_END:
-		if p.ppuMode != DRAW {
-			p.vram[addr-VRAM_START] = value
+		if p.PPUMode != DRAW {
+			p.VRAM[addr-VRAM_START] = value
 		}
 	case addr >= OAM_START && addr <= OAM_END:
-		if !p.dmaActive && p.ppuMode != OAM_SCAN && p.ppuMode != DRAW {
-			p.oam[addr-OAM_START] = value
+		if !p.DMAActive && p.PPUMode != OAM_SCAN && p.PPUMode != DRAW {
+			p.OAM[addr-OAM_START] = value
 		}
 	default:
 		switch addr {
@@ -219,23 +254,23 @@ func (p *PPU) Write(addr uint16, value uint8) {
 		case STAT:
 			p.setSTAT(value)
 		case SCY:
-			p.scy = value
+			p.SCY = value
 		case SCX:
-			p.scx = value
+			p.SCX = value
 		case LY:
-			p.ly = value
+			p.LY = value
 		case LYC:
-			p.lyc = value
+			p.LYC = value
 		case BGP:
-			p.bgp = value
+			p.BGP = value
 		case OBP0:
-			p.obp0 = value
+			p.OBP0 = value
 		case OBP1:
-			p.obp1 = value
+			p.OBP1 = value
 		case WY:
-			p.wy = value
+			p.WY = value
 		case WX:
-			p.wx = value
+			p.WX = value
 		default:
 			panic(fmt.Errorf("unsupported write for ppu: %x", addr))
 		}
@@ -243,48 +278,48 @@ func (p *PPU) Write(addr uint16, value uint8) {
 }
 
 func (p *PPU) WriteOAM(addr uint16, value uint8) {
-	p.oam[addr-OAM_START] = value
+	p.OAM[addr-OAM_START] = value
 }
 
 func (p *PPU) ToggleDMAActive(active bool) {
-	p.dmaActive = active
+	p.DMAActive = active
 }
 
 var tileMapAreas = [2]uint16{0x9800, 0x9C00}
 
 func (p *PPU) Step(cycles int) {
-	if !p.ppuEnabled {
-		if p.ly != 0 || p.ppuMode != HBLANK {
-			p.frameBufferFIFO.push(frameBuffer{})
+	if !p.PPUEnabled {
+		if p.LY != 0 || p.PPUMode != HBLANK {
+			p.FrameBufferFIFO.push(frameBuffer{})
 
-			p.ly = 0
-			p.lineCycles = 0
-			p.ppuMode = HBLANK
+			p.LY = 0
+			p.LineCycles = 0
+			p.PPUMode = HBLANK
 		}
 
 		return
 	}
 
-	p.lineCycles += cycles
+	p.LineCycles += cycles
 
-	switch p.ppuMode {
+	switch p.PPUMode {
 	case OAM_SCAN:
-		if p.lineCycles >= OAM_CYCLES {
+		if p.LineCycles >= OAM_CYCLES {
 			p.scanOAM()
 		}
 
 	case DRAW:
-		for p.fetchedObjects < p.objectCount && p.objects[p.fetchedObjects].x <= p.pushedX+X_OFFSET {
+		for p.FetchedObjects < p.ObjectCount && p.Objects[p.FetchedObjects].X <= p.PushedX+X_OFFSET {
 			p.fetchObjPixels()
 		}
 
 		p.fetchBGWPixels()
 		p.pushPixelToLCD()
 
-		if p.pushedX >= WIDTH {
-			p.ppuMode = HBLANK
+		if p.PushedX >= WIDTH {
+			p.PPUMode = HBLANK
 
-			if p.hblankInt {
+			if p.HBlankInt {
 				p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 			}
 
@@ -292,46 +327,46 @@ func (p *PPU) Step(cycles int) {
 		}
 
 	case HBLANK:
-		if p.lineCycles >= CYCLES_PER_LINE {
-			p.lineCycles = 0
-			p.ly++
+		if p.LineCycles >= CYCLES_PER_LINE {
+			p.LineCycles = 0
+			p.LY++
 
 			p.checkLYC()
 
-			if p.bgScanlineContainedWindow {
-				p.windowLineCounter++
-				p.bgScanlineContainedWindow = false
+			if p.BGScanlineContainedWindow {
+				p.WindowLineCounter++
+				p.BGScanlineContainedWindow = false
 			}
 
-			if p.ly < HEIGHT {
-				p.ppuMode = OAM_SCAN
+			if p.LY < HEIGHT {
+				p.PPUMode = OAM_SCAN
 			} else {
-				p.ppuMode = VBLANK
-				p.windowLineCounter = 0
+				p.PPUMode = VBLANK
+				p.WindowLineCounter = 0
 
-				p.frameBufferFIFO.push(p.currentFrameBuffer)
-				p.currentFrameBuffer.clear()
-				p.frames++
+				p.FrameBufferFIFO.push(p.CurrentFrameBuffer)
+				p.CurrentFrameBuffer.clear()
+				p.Frames++
 
 				p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
 
-				if p.vblankInt {
+				if p.VBlankInt {
 					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
 		}
 
 	case VBLANK:
-		if p.lineCycles >= CYCLES_PER_LINE {
-			p.lineCycles = 0
-			p.ly++
+		if p.LineCycles >= CYCLES_PER_LINE {
+			p.LineCycles = 0
+			p.LY++
 			p.checkLYC()
 
-			if p.ly == LINES_PER_FRAME {
-				p.ppuMode = OAM_SCAN
-				p.ly = 0
+			if p.LY == LINES_PER_FRAME {
+				p.PPUMode = OAM_SCAN
+				p.LY = 0
 
-				if p.oamInt {
+				if p.OAMInt {
 					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
@@ -340,7 +375,7 @@ func (p *PPU) Step(cycles int) {
 }
 
 func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
-	fb, ok := p.frameBufferFIFO.pop()
+	fb, ok := p.FrameBufferFIFO.pop()
 	if ok {
 		return fb
 	}
@@ -348,98 +383,112 @@ func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
 	return frameBuffer{}
 }
 
+func (p *PPU) Load(buf *bytes.Reader) {
+	enc := gob.NewDecoder(buf)
+	err := enc.Decode(&p.state)
+
+	lib.Assert(err == nil, "failed to decode state: %v", err)
+}
+
+func (p *PPU) Save(buf *bytes.Buffer) {
+	enc := gob.NewEncoder(buf)
+	err := enc.Encode(p.state)
+
+	lib.Assert(err == nil, "failed to encode state: %v", err)
+}
+
 func (p *PPU) scanOAM() {
 	i := 0
-	p.objectCount = 0
+	p.ObjectCount = 0
 
-	for i < OAM_SIZE && p.objectCount < 10 {
-		y := p.oam[i]
+	for i < OAM_SIZE && p.ObjectCount < 10 {
+		y := p.OAM[i]
 
 		objSize := uint8(8)
-		if p.objSize {
+		if p.ObjSize {
 			objSize = 16
 		}
 
-		if p.ly+Y_OFFSET >= y && p.ly+Y_OFFSET < objSize+y {
-			p.objects[p.objectCount].y = p.oam[i]
-			p.objects[p.objectCount].x = p.oam[i+1]
-			p.objects[p.objectCount].tileIdx = p.oam[i+2]
+		if p.LY+Y_OFFSET >= y && p.LY+Y_OFFSET < objSize+y {
+			p.Objects[p.ObjectCount].Y = p.OAM[i]
+			p.Objects[p.ObjectCount].X = p.OAM[i+1]
+			p.Objects[p.ObjectCount].TileIdx = p.OAM[i+2]
 
-			attrs := p.oam[i+3]
+			attrs := p.OAM[i+3]
 
-			p.objects[p.objectCount].bgwPriority = attrs&0x80 != 0
-			p.objects[p.objectCount].yFlip = attrs&0x40 != 0
-			p.objects[p.objectCount].xFlip = attrs&0x20 != 0
-			p.objects[p.objectCount].dmgPalette = attrs&0x10 != 0
-			p.objects[p.objectCount].cgbBank = attrs&0x08 != 0
-			p.objects[p.objectCount].cgbPalette = attrs & 0x07
+			p.Objects[p.ObjectCount].BGWPriority = attrs&0x80 != 0
+			p.Objects[p.ObjectCount].YFlip = attrs&0x40 != 0
+			p.Objects[p.ObjectCount].XFlip = attrs&0x20 != 0
+			p.Objects[p.ObjectCount].DMGPalette = attrs&0x10 != 0
+			p.Objects[p.ObjectCount].CGBBank = attrs&0x08 != 0
+			p.Objects[p.ObjectCount].CGBPalette = attrs & 0x07
 
-			p.objectCount++
+			p.ObjectCount++
 		}
 
 		i += 4
 	}
 
 	// Sort the objects by x coordinate, stable so that objects scanned first retain priority
-	slices.SortStableFunc(p.objects[:p.objectCount], func(a, b object) int {
-		return int(a.x) - int(b.x)
+	slices.SortStableFunc(p.Objects[:p.ObjectCount], func(a, b object) int {
+		return int(a.X) - int(b.X)
 	})
 
-	p.discardedPixels = 0
-	p.fetchedObjects = 0
-	p.pushedX = 0
-	p.fetchedX = 0
-	p.backgroundFIFO.clear()
-	p.objectFIFO.clear()
-	p.windowTriggered = false
+	p.DiscardedPixels = 0
+	p.FetchedObjects = 0
+	p.PushedX = 0
+	p.FetchedX = 0
+	p.BackgroundFIFO.clear()
+	p.ObjectFIFO.clear()
+	p.WindowTriggered = false
 
-	p.ppuMode = DRAW
+	p.PPUMode = DRAW
 }
 
 func (p *PPU) readLCDC() uint8 {
 	var value uint8
 
-	value |= btou8(p.ppuEnabled) << 7
-	value |= btou8(p.windowTileMap) << 6
-	value |= btou8(p.windowEnabled) << 5
-	value |= btou8(p.bgwTileData) << 4
-	value |= btou8(p.bgTileMap) << 3
-	value |= btou8(p.objSize) << 2
-	value |= btou8(p.objEnabled) << 1
-	value |= btou8(p.bgwEnabled)
+	value |= btou8(p.PPUEnabled) << 7
+	value |= btou8(p.WindowTileMap) << 6
+	value |= btou8(p.WindowEnabled) << 5
+	value |= btou8(p.BGWTileData) << 4
+	value |= btou8(p.BGTileMap) << 3
+	value |= btou8(p.ObjSize) << 2
+	value |= btou8(p.ObjEnabled) << 1
+	value |= btou8(p.BGWEnabled)
 
 	return value
 }
 
 func (p *PPU) setLCDC(value uint8) {
-	p.ppuEnabled = value&0x80 != 0
-	p.windowTileMap = value&0x40 != 0
-	p.windowEnabled = value&0x20 != 0
-	p.bgwTileData = value&0x10 != 0
-	p.bgTileMap = value&0x08 != 0
-	p.objSize = value&0x04 != 0
-	p.objEnabled = value&0x02 != 0
-	p.bgwEnabled = value&0x01 != 0
+	p.PPUEnabled = value&0x80 != 0
+	p.WindowTileMap = value&0x40 != 0
+	p.WindowEnabled = value&0x20 != 0
+	p.BGWTileData = value&0x10 != 0
+	p.BGTileMap = value&0x08 != 0
+	p.ObjSize = value&0x04 != 0
+	p.ObjEnabled = value&0x02 != 0
+	p.BGWEnabled = value&0x01 != 0
 }
 
 func (p *PPU) readSTAT() uint8 {
 	var value uint8
 
-	value |= btou8(p.lycInt) << 6
-	value |= btou8(p.oamInt) << 5
-	value |= btou8(p.vblankInt) << 4
-	value |= btou8(p.hblankInt) << 3
-	value |= btou8(p.lycEqLy) << 2
-	value |= uint8(p.ppuMode)
+	value |= btou8(p.LYCInt) << 6
+	value |= btou8(p.OAMInt) << 5
+	value |= btou8(p.VBlankInt) << 4
+	value |= btou8(p.HBlankInt) << 3
+	value |= btou8(p.LYCEqLy) << 2
+	value |= uint8(p.PPUMode)
 
 	return value
 }
 
 func (p *PPU) setSTAT(value uint8) {
-	p.lycInt = value&0x40 != 0
-	p.oamInt = value&0x20 != 0
-	p.vblankInt = value&0x10 != 0
-	p.hblankInt = value&0x08 != 0
+	p.LYCInt = value&0x40 != 0
+	p.OAMInt = value&0x20 != 0
+	p.VBlankInt = value&0x10 != 0
+	p.HBlankInt = value&0x08 != 0
 }
 
 func btou8(b bool) uint8 {
@@ -451,9 +500,9 @@ func btou8(b bool) uint8 {
 }
 
 func (p *PPU) checkLYC() {
-	p.lycEqLy = p.ly == p.lyc
+	p.LYCEqLy = p.LY == p.LYC
 
-	if p.lycEqLy && p.lycInt {
+	if p.LYCEqLy && p.LYCInt {
 		p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cterence/gbgo/internal/log"
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
 
@@ -25,6 +26,7 @@ const (
 type console interface {
 	Shutdown()
 	Pause()
+	Reset()
 }
 
 type bus interface {
@@ -64,6 +66,7 @@ const (
 	TURBO
 	PAUSE
 	SLOWMO
+	RESET
 )
 
 type UI struct {
@@ -157,6 +160,11 @@ var buttons = []buttonState{
 		keyboardKeys:   []int32{rl.KeyLeftShift},
 		gamepadButtons: []int32{rl.GamepadButtonLeftTrigger2},
 	},
+	// RESET
+	{
+		keyboardKeys:   []int32{rl.KeyTab},
+		gamepadButtons: []int32{},
+	},
 }
 
 // TODO: better system for choosing controller
@@ -167,16 +175,18 @@ func (ui *UI) Init(romPath string) {
 	romTitle := strings.ReplaceAll(romFile, filepath.Ext(romFile), "")
 	ui.windowTitle = "gbgo - " + romTitle
 
-	rl.SetTraceLogLevel(rl.LogError)
-	rl.SetConfigFlags(rl.FlagWindowResizable | rl.FlagWindowHighdpi)
-	rl.InitWindow(WIDTH*INITIAL_SCALE, HEIGHT*INITIAL_SCALE, ui.windowTitle)
-	rl.SetTargetFPS(FPS)
-	rl.HideCursor()
+	if ui.frames == 0 {
+		rl.SetTraceLogLevel(rl.LogError)
+		rl.SetConfigFlags(rl.FlagWindowResizable | rl.FlagWindowHighdpi)
+		rl.InitWindow(WIDTH*INITIAL_SCALE, HEIGHT*INITIAL_SCALE, ui.windowTitle)
+		rl.SetTargetFPS(FPS)
+		rl.HideCursor()
 
-	ui.texture = rl.LoadTextureFromImage(rl.GenImageColor(WIDTH, HEIGHT, rl.Black))
-	rl.SetTextureFilter(ui.texture, rl.FilterPoint)
+		ui.texture = rl.LoadTextureFromImage(rl.GenImageColor(WIDTH, HEIGHT, rl.Black))
+		rl.SetTextureFilter(ui.texture, rl.FilterPoint)
+	}
+
 	ui.pixels = make([]rl.Color, WIDTH*HEIGHT)
-
 	ui.joypad = 0xCF
 }
 
@@ -329,6 +339,11 @@ func (ui *UI) handleEvents() {
 		} else {
 			ui.updateTitleFPS()
 		}
+	}
+
+	if buttons[RESET].justPressed {
+		log.Debug("[ui] reset")
+		ui.Console.Reset()
 	}
 
 	ui.currentFPS = rl.GetFPS()

@@ -101,7 +101,7 @@ func main() {
 
 				defer func() {
 					if err := f.Close(); err != nil {
-						fmt.Printf("failed to close pprof file: %v", err)
+						fmt.Printf("failed to close pprof file: %v\n", err)
 					}
 				}()
 
@@ -151,7 +151,19 @@ func main() {
 				}
 			}
 
-			if err := console.Run(ctx, romBytes, romPath, opts...); err != nil {
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				return err
+			}
+
+			stateDir := filepath.Join(homeDir, ".local", "share", "gbgo")
+
+			err = os.MkdirAll(stateDir, 0755)
+			if err != nil {
+				return err
+			}
+
+			if err := console.Run(ctx, romBytes, romPath, stateDir, opts...); err != nil {
 				return err
 			}
 

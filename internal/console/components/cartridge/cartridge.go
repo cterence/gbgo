@@ -1,7 +1,6 @@
 package cartridge
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,7 +26,7 @@ const (
 	EXTERNAL_RAM_END   = 0xBFFF
 	EXTERNAL_RAM_SIZE  = EXTERNAL_RAM_END - EXTERNAL_RAM_START + 1
 
-	EXTERNAL_RAM_FLUSH_PERIOD = 30 * time.Second
+	EXTERNAL_RAM_FLUSH_PERIOD = 5 * time.Second
 )
 
 type mbc uint8
@@ -45,14 +44,16 @@ const (
 
 type Cartridge struct {
 	romPath          string
+	stateDir         string
 	romBanks         [][ROM_BANK_SIZE]uint8
+	externalRAM      [][EXTERNAL_RAM_SIZE]uint8
+	externalRAMMutex sync.Mutex
+
 	romBankCount     uint16
 	ramBankCount     uint8
 	currentROMBank   uint8
 	currentRAMBank   uint8
-	externalRAM      [][EXTERNAL_RAM_SIZE]uint8
 	externalRAMDirty bool
-	externalRAMMutex sync.Mutex
 
 	mbc     mbc
 	ram     bool
@@ -64,7 +65,7 @@ type Cartridge struct {
 	ramEnabled bool
 }
 
-func (c *Cartridge) Init(romPath string, cartridgeType, romSize, ramSize uint8) error {
+func (c *Cartridge) Init(romPath, stateDir string, cartridgeType, romSize, ramSize uint8) error {
 	c.romPath = romPath
 	c.currentROMBank = 1
 	c.currentRAMBank = 0
@@ -94,24 +95,26 @@ func (c *Cartridge) Init(romPath string, cartridgeType, romSize, ramSize uint8) 
 
 	c.externalRAM = make([][EXTERNAL_RAM_SIZE]uint8, c.ramBankCount)
 
-	if err := c.loadExternalRam(); err != nil {
-		return fmt.Errorf("failed to load external RAM: %w", err)
-	}
-
-	go func() {
-		t := time.NewTicker(EXTERNAL_RAM_FLUSH_PERIOD)
-		defer t.Stop()
-
-		for range t.C {
-			if c.externalRAMDirty {
-				if err := c.flushExternalRam(); err != nil {
-					log.Debug("[cartridge] failed to flush external RAM: %v", err)
-				}
-
-				c.externalRAMDirty = false
-			}
+	if c.battery {
+		if err := c.loadExternalRam(); err != nil {
+			return fmt.Errorf("failed to load external RAM: %w", err)
 		}
-	}()
+
+		go func() {
+			t := time.NewTicker(EXTERNAL_RAM_FLUSH_PERIOD)
+			defer t.Stop()
+
+			for range t.C {
+				if c.externalRAMDirty {
+					if err := c.flushExternalRam(); err != nil {
+						log.Debug("[cartridge] failed to flush external RAM: %v", err)
+					}
+
+					c.externalRAMDirty = false
+				}
+			}
+		}()
+	}
 
 	log.Debug("[cartridge] type: %d", cartridgeType)
 	log.Debug("[cartridge] rom bank count: %d", c.romBankCount)
@@ -186,17 +189,19 @@ func (c *Cartridge) Load(byteIdx uint32, value uint8) {
 }
 
 func (c *Cartridge) Close() {
-	if err := c.flushExternalRam(); err != nil {
-		fmt.Println(err)
+	if c.battery {
+		if err := c.flushExternalRam(); err != nil {
+			fmt.Println(err)
+		}
 	}
 }
 
 func (c *Cartridge) loadExternalRam() error {
-	savePath := strings.ReplaceAll(c.romPath, filepath.Ext(c.romPath), ".sav")
+	savePath := strings.ReplaceAll(filepath.Base(c.romPath), filepath.Ext(c.romPath), ".sav")
 
-	ramBytes, err := os.ReadFile(savePath)
+	ramBytes, err := os.ReadFile(filepath.Join(c.stateDir, savePath))
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
+		if !strings.Contains(err.Error(), "no such file or directory") {
 			return fmt.Errorf("failed to read save file: %w", err)
 		}
 
@@ -213,9 +218,9 @@ func (c *Cartridge) loadExternalRam() error {
 }
 
 func (c *Cartridge) flushExternalRam() error {
-	savePath := strings.ReplaceAll(c.romPath, filepath.Ext(c.romPath), ".sav")
+	savePath := strings.ReplaceAll(filepath.Base(c.romPath), filepath.Ext(c.romPath), ".sav")
 
-	f, err := os.Create(savePath)
+	f, err := os.Create(filepath.Join(c.stateDir, savePath))
 	if err != nil {
 		return fmt.Errorf("failed to create save file: %w", err)
 	}

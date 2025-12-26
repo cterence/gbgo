@@ -48,16 +48,16 @@ type Bus struct {
 	DMA       rw
 	UI        rw
 
-	bootRom []uint8
-	bank    uint8
+	bootROM     []uint8
+	hideBootROM uint8
 }
 
 type Option func(*Bus)
 
 func WithBootROM(bootRom []uint8) Option {
 	return func(b *Bus) {
-		b.bootRom = make([]uint8, len(bootRom))
-		copy(b.bootRom[:], bootRom[:])
+		b.bootROM = make([]uint8, len(bootRom))
+		copy(b.bootROM[:], bootRom[:])
 	}
 }
 
@@ -66,8 +66,8 @@ func (b *Bus) Init(options ...Option) {
 		o(b)
 	}
 
-	if len(b.bootRom) == 0 {
-		b.bank = 1
+	if len(b.bootROM) == 0 {
+		b.hideBootROM = 1
 		b.Write(0xFF00, 0xCF)
 		b.Write(0xFF01, 0x00)
 		b.Write(0xFF02, 0x7E)
@@ -113,8 +113,8 @@ func (b *Bus) Init(options ...Option) {
 
 func (b *Bus) Read(addr uint16) uint8 {
 	switch {
-	case addr <= 0xFF && b.bank == 0:
-		return b.bootRom[addr]
+	case addr <= 0xFF && b.hideBootROM == 0:
+		return b.bootROM[addr]
 	case addr <= ROM_BANK_1_END || (addr >= EXTERNAL_RAM_START && addr <= EXTERNAL_RAM_END):
 		return b.Cartridge.Read(addr)
 	case (addr >= VRAM_START && addr <= VRAM_END) || (addr >= OAM_START && addr <= OAM_END) || (addr >= 0xFF40 && addr <= 0xFF4B && addr != 0xFF46):
@@ -158,7 +158,7 @@ func (b *Bus) Write(addr uint16, value uint8) {
 	case addr == IFF || addr == IE:
 		b.CPU.Write(addr, value)
 	case addr == 0xFF50:
-		b.bank = value
+		b.hideBootROM = value
 	case addr >= WRAM_START && addr <= WRAM_END || addr >= HRAM_START && addr <= HRAM_END:
 		b.Memory.Write(addr, value)
 	case addr >= ECHO_START && addr <= ECHO_END:

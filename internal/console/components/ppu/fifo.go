@@ -8,50 +8,50 @@ const (
 )
 
 type pixel struct {
-	colorIdx    uint8
-	color       uint8
-	bgwPriority bool
+	ColorIdx    uint8
+	Color       uint8
+	BGWPriority bool
 }
 
 type fifo[T any] struct {
-	elements []T
-	head     int
-	tail     int
-	count    int
+	Elements []T
+	Head     int
+	Tail     int
+	Count    int
 }
 
 func (f *fifo[T]) push(p T) {
-	if f.count == len(f.elements) {
+	if f.Count == len(f.Elements) {
 		return
 	}
 
-	f.elements[f.tail] = p
-	f.tail = (f.tail + 1) % len(f.elements)
-	f.count++
+	f.Elements[f.Tail] = p
+	f.Tail = (f.Tail + 1) % len(f.Elements)
+	f.Count++
 }
 
 func (f *fifo[T]) pop() (T, bool) {
-	if f.count == 0 {
+	if f.Count == 0 {
 		var zero T
 		return zero, false
 	}
 
-	p := f.elements[f.head]
-	f.head = (f.head + 1) % len(f.elements)
-	f.count--
+	p := f.Elements[f.Head]
+	f.Head = (f.Head + 1) % len(f.Elements)
+	f.Count--
 
 	return p, true
 }
 
 func (f *fifo[T]) clear() {
-	f.count = 0
-	f.head = 0
-	f.tail = 0
+	f.Count = 0
+	f.Head = 0
+	f.Tail = 0
 }
 
 func (p *PPU) fetchBGWPixels() {
 	// Only fetch if fifo empty
-	if p.backgroundFIFO.count > 0 {
+	if p.BackgroundFIFO.Count > 0 {
 		return
 	}
 
@@ -61,39 +61,39 @@ func (p *PPU) fetchBGWPixels() {
 		tileRow       uint16
 	)
 
-	tileMapSelector := btou8(p.bgTileMap)
+	tileMapSelector := btou8(p.BGTileMap)
 
 	// Check if we should be fetching a window pixel
-	if !p.windowTriggered && p.windowEnabled && p.wx <= 166 && p.ly >= p.wy && p.fetchedX+7 >= p.wx {
-		p.windowTriggered = true
-		p.bgScanlineContainedWindow = true
+	if !p.WindowTriggered && p.WindowEnabled && p.WX <= 166 && p.LY >= p.WY && p.FetchedX+7 >= p.WX {
+		p.WindowTriggered = true
+		p.BGScanlineContainedWindow = true
 	}
 
-	if p.windowTriggered {
-		tileMapSelector = btou8(p.windowTileMap)
-		windowX := (p.fetchedX + 7 - p.wx) / 8
-		tileMapOffset = uint16(windowX) + 32*(uint16(p.windowLineCounter)/8)
-		tileRow = uint16(p.windowLineCounter) % 8
+	if p.WindowTriggered {
+		tileMapSelector = btou8(p.WindowTileMap)
+		windowX := (p.FetchedX + 7 - p.WX) / 8
+		tileMapOffset = uint16(windowX) + 32*(uint16(p.WindowLineCounter)/8)
+		tileRow = uint16(p.WindowLineCounter) % 8
 	} else {
-		tileX := uint16(((p.fetchedX / 8) + (p.scx / 8)) & 0x1f)
-		tileY := uint16(((p.ly + p.scy) & 0xFF) / 8)
+		tileX := uint16(((p.FetchedX / 8) + (p.SCX / 8)) & 0x1f)
+		tileY := uint16(((p.LY + p.SCY) & 0xFF) / 8)
 		tileMapOffset = tileX + 32*tileY
-		tileRow = (uint16(p.ly) + uint16(p.scy)) % 8
+		tileRow = (uint16(p.LY) + uint16(p.SCY)) % 8
 	}
 
 	tileMapOffset &= 0x3FF
 	tileMapArea := tileMapAreas[tileMapSelector]
-	tileIdx := p.vram[tileMapArea+tileMapOffset-VRAM_START]
+	tileIdx := p.VRAM[tileMapArea+tileMapOffset-VRAM_START]
 
 	// Select BGW tile data area
 	tileAddr := TILE_BLOCK_0 + uint16(tileIdx)*TILE_BYTE_SIZE
-	if !p.bgwTileData {
+	if !p.BGWTileData {
 		tileAddr = uint16(int32(TILE_BLOCK_1) + (int32(int8(tileIdx)))*TILE_BYTE_SIZE)
 	}
 
 	// 2. & 3. Fetch tile data
-	tileLo := p.vram[tileAddr+tileRow*2-VRAM_START]
-	tileHi := p.vram[tileAddr+tileRow*2+1-VRAM_START]
+	tileLo := p.VRAM[tileAddr+tileRow*2-VRAM_START]
+	tileHi := p.VRAM[tileAddr+tileRow*2+1-VRAM_START]
 
 	// 4. Push to FIFO
 	for b := range 8 {
@@ -101,29 +101,29 @@ func (p *PPU) fetchBGWPixels() {
 		hiPx := (tileHi >> (7 - b)) & 0x1
 		colorIdx := hiPx<<1 | loPx
 		pixel := pixel{
-			colorIdx: colorIdx,
-			color:    (p.bgp >> (colorIdx * 2)) & 0x3,
+			ColorIdx: colorIdx,
+			Color:    (p.BGP >> (colorIdx * 2)) & 0x3,
 		}
 
-		p.backgroundFIFO.push(pixel)
+		p.BackgroundFIFO.push(pixel)
 	}
 
-	p.fetchedX += 8
+	p.FetchedX += 8
 }
 
 func (p *PPU) fetchObjPixels() {
 	// Only fetch if fifo empty
-	obj := p.objects[p.fetchedObjects]
+	obj := p.Objects[p.FetchedObjects]
 
 	size := uint8(8)
-	if p.objSize {
+	if p.ObjSize {
 		size = 16
 	}
 
-	tileIdx := obj.tileIdx
+	tileIdx := obj.TileIdx
 
-	tileY := p.ly + Y_OFFSET - obj.y
-	if obj.yFlip {
+	tileY := p.LY + Y_OFFSET - obj.Y
+	if obj.YFlip {
 		tileY = size - 1 - tileY
 	}
 
@@ -138,23 +138,23 @@ func (p *PPU) fetchObjPixels() {
 
 	tileAddr := TILE_BLOCK_0 + uint16(tileIdx)*TILE_BYTE_SIZE
 
-	tileLo := p.vram[tileAddr+uint16(tileY)*2-VRAM_START]
-	tileHi := p.vram[tileAddr+uint16(tileY)*2+1-VRAM_START]
+	tileLo := p.VRAM[tileAddr+uint16(tileY)*2-VRAM_START]
+	tileHi := p.VRAM[tileAddr+uint16(tileY)*2+1-VRAM_START]
 
-	obp := p.obp0
-	if obj.dmgPalette {
-		obp = p.obp1
+	obp := p.OBP0
+	if obj.DMGPalette {
+		obp = p.OBP1
 	}
 
 	startPixel := 0
 
-	if obj.x < X_OFFSET {
-		startPixel = int(X_OFFSET - obj.x)
+	if obj.X < X_OFFSET {
+		startPixel = int(X_OFFSET - obj.X)
 	}
 
 	for px := startPixel; px < 8; px++ {
 		pixelIdx := 7 - px
-		if obj.xFlip {
+		if obj.XFlip {
 			pixelIdx = px
 		}
 
@@ -163,50 +163,50 @@ func (p *PPU) fetchObjPixels() {
 		colorIdx := hiPx<<1 | loPx
 
 		newPixel := pixel{
-			colorIdx:    colorIdx,
-			color:       (obp >> (colorIdx * 2)) & 0x3,
-			bgwPriority: obj.bgwPriority,
+			ColorIdx:    colorIdx,
+			Color:       (obp >> (colorIdx * 2)) & 0x3,
+			BGWPriority: obj.BGWPriority,
 		}
 
 		fifoIdx := px - startPixel
-		if fifoIdx < p.objectFIFO.count {
+		if fifoIdx < p.ObjectFIFO.Count {
 			// Only overwrite if existing pixel is transparent
-			if p.objectFIFO.elements[fifoIdx].colorIdx == 0 {
-				p.objectFIFO.elements[fifoIdx] = newPixel
+			if p.ObjectFIFO.Elements[fifoIdx].ColorIdx == 0 {
+				p.ObjectFIFO.Elements[fifoIdx] = newPixel
 			}
 		} else {
-			p.objectFIFO.push(newPixel)
+			p.ObjectFIFO.push(newPixel)
 		}
 	}
 
-	p.fetchedObjects++
+	p.FetchedObjects++
 }
 
 func (p *PPU) pushPixelToLCD() {
-	bgPixel, ok := p.backgroundFIFO.pop()
+	bgPixel, ok := p.BackgroundFIFO.pop()
 	if !ok {
 		return
 	}
 
-	if !p.bgwEnabled {
-		bgPixel.color = 0
-		bgPixel.colorIdx = 0
+	if !p.BGWEnabled {
+		bgPixel.Color = 0
+		bgPixel.ColorIdx = 0
 	}
 
 	finalPixel := bgPixel
 
-	objPixel, ok := p.objectFIFO.pop()
+	objPixel, ok := p.ObjectFIFO.pop()
 	if ok {
-		if p.objEnabled && objPixel.colorIdx != 0 && (!objPixel.bgwPriority || bgPixel.colorIdx == 0) {
+		if p.ObjEnabled && objPixel.ColorIdx != 0 && (!objPixel.BGWPriority || bgPixel.ColorIdx == 0) {
 			finalPixel = objPixel
 		}
 	}
 
-	if p.discardedPixels < p.scx%8 {
-		p.discardedPixels++
+	if p.DiscardedPixels < p.SCX%8 {
+		p.DiscardedPixels++
 		return
 	}
 
-	p.currentFrameBuffer[p.pushedX][p.ly] = finalPixel.color
-	p.pushedX++
+	p.CurrentFrameBuffer[p.PushedX][p.LY] = finalPixel.Color
+	p.PushedX++
 }
