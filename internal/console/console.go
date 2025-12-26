@@ -235,6 +235,7 @@ func Disassemble(romBytes []uint8) error {
 func (gb *console) Shutdown() {
 	gb.cancel()
 	gb.cartridge.Close()
+
 	if !gb.noState {
 		gb.saveState()
 	}
