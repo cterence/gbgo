@@ -16,6 +16,7 @@ A Game Boy emulator written in Golang.
 - [x] Serializable interface for state save
 - [x] Central location for storing save / state files
 - [x] Save state
+- [ ] Window with tile data
 - [ ] Debug overlay
 - [ ] Runtime assertions
 - [ ] Trace ring buffer
