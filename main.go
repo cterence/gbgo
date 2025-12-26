@@ -82,6 +82,17 @@ func main() {
 			},
 
 			&cli.BoolFlag{
+				Name:    "no-state",
+				Aliases: []string{"ns"},
+				Usage:   "do not load state file",
+				Action: func(_ context.Context, _ *cli.Command, b bool) error {
+					opts = append(opts, console.WithNoState())
+
+					return nil
+				},
+			},
+
+			&cli.BoolFlag{
 				Name:    "headless",
 				Aliases: []string{"hl"},
 				Usage:   "run without UI",

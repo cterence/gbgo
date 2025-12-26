@@ -102,7 +102,7 @@ func Test_Blargg_CPU_GBD(t *testing.T) {
 func Test_Blargg_CPU_Serial(t *testing.T) {
 	expected := []byte("cpu_instrs\n\n01:ok  02:ok  03:ok  04:ok  05:ok  06:ok  07:ok  08:ok  09:ok  10:ok  11:ok  \n\nPassed all tests")
 
-	cmd := exec.Command(os.Args[0], "./sub/gb-test-roms/cpu_instrs/cpu_instrs.gb", "--hl", "--ps")
+	cmd := exec.Command(os.Args[0], "./sub/gb-test-roms/cpu_instrs/cpu_instrs.gb", "--hl", "--ps", "--ns")
 
 	cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
 

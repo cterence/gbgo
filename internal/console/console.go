@@ -62,6 +62,7 @@ type console struct {
 	headless bool
 	stopped  bool
 	paused   bool
+	noState  bool
 }
 
 type Option func(*console)
@@ -75,6 +76,12 @@ func WithHeadless() Option {
 func WithPrintSerial() Option {
 	return func(c *console) {
 		c.serialOptions = append(c.serialOptions, serial.WithPrintSerial())
+	}
+}
+
+func WithNoState() Option {
+	return func(c *console) {
+		c.noState = true
 	}
 }
 
@@ -140,7 +147,9 @@ func Run(ctx context.Context, romBytes []uint8, romPath, stateDir string, option
 		gb.cartridge.Load(uint32(i), b)
 	}
 
-	gb.loadState()
+	if !gb.noState {
+		gb.loadState()
+	}
 
 	uiCycles := 0
 
@@ -226,7 +235,9 @@ func Disassemble(romBytes []uint8) error {
 func (gb *console) Shutdown() {
 	gb.cancel()
 	gb.cartridge.Close()
-	gb.saveState()
+	if !gb.noState {
+		gb.saveState()
+	}
 
 	log.Debug("[console] shutdown")
 }
