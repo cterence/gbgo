@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,12 +14,7 @@ const (
 	HEIGHT        = 144
 	INITIAL_SCALE = 4
 	FPS           = 60
-
-	AXIS_TRIGGER = 0.5
-
-	INTERRUPT_CODE = 0x10
-
-	JOYPAD = 0xFF00
+	AXIS_TRIGGER  = 0.5
 )
 
 type console interface {
@@ -29,16 +23,8 @@ type console interface {
 	Reset()
 }
 
-type bus interface {
-	Read(addr uint16) uint8
-}
-
-type cpu interface {
-	RequestInterrupt(code uint8)
-}
-
-type ppu interface {
-	GetFrameBuffer() [WIDTH][HEIGHT]uint8
+type joypad interface {
+	UpdateButtons(a, b, right, left, up, down, selectB, start bool)
 }
 
 type buttonState struct {
@@ -62,39 +48,12 @@ const (
 	DOWN
 	LEFT
 	RIGHT
-	// Other buttons
+	// Emulator buttons
 	TURBO
 	PAUSE
 	SLOWMO
 	RESET
 )
-
-type UI struct {
-	Console console
-	Bus     bus
-	CPU     cpu
-	PPU     ppu
-
-	windowTitle string
-	pixels      []rl.Color
-
-	frames    uint64
-	cpuCycles uint64
-	texture   rl.Texture2D
-
-	currentFPS int32
-
-	joypad uint8
-
-	paused bool
-}
-
-var palette = [4]rl.Color{
-	{A: 0xFF, R: 0xFF, G: 0xFF, B: 0xFF},
-	{A: 0xFF, R: 0xAA, G: 0xAA, B: 0xAA},
-	{A: 0xFF, R: 0x55, G: 0x55, B: 0x55},
-	{A: 0xFF, R: 0x00, G: 0x00, B: 0x00},
-}
 
 var buttons = []buttonState{
 	// A
@@ -167,6 +126,28 @@ var buttons = []buttonState{
 	},
 }
 
+type UI struct {
+	Console console
+	Joypad  joypad
+
+	windowTitle string
+	pixels      []rl.Color
+
+	frames  uint64
+	texture rl.Texture2D
+
+	currentFPS int32
+
+	paused bool
+}
+
+var palette = [4]rl.Color{
+	{A: 0xFF, R: 0xFF, G: 0xFF, B: 0xFF},
+	{A: 0xFF, R: 0xAA, G: 0xAA, B: 0xAA},
+	{A: 0xFF, R: 0x55, G: 0x55, B: 0x55},
+	{A: 0xFF, R: 0x00, G: 0x00, B: 0x00},
+}
+
 // TODO: better system for choosing controller
 var gamepad = int32(1)
 
@@ -186,81 +167,21 @@ func (ui *UI) Init(romPath string) {
 		rl.SetTextureFilter(ui.texture, rl.FilterPoint)
 	}
 
+	// Must use make to properly initialize array for CGo calls
 	ui.pixels = make([]rl.Color, WIDTH*HEIGHT)
-	ui.joypad = 0xCF
-}
-
-func (ui *UI) Read(addr uint16) uint8 {
-	switch addr {
-	case JOYPAD:
-		result := uint8(0xCF) | ui.joypad
-
-		if ui.joypad&0x10 == 0 {
-			if buttons[RIGHT].currentlyPressed {
-				result &^= 0x1
-			}
-
-			if buttons[LEFT].currentlyPressed {
-				result &^= 0x2
-			}
-
-			if buttons[UP].currentlyPressed {
-				result &^= 0x4
-			}
-
-			if buttons[DOWN].currentlyPressed {
-				result &^= 0x8
-			}
-		}
-
-		if ui.joypad&0x20 == 0 {
-			if buttons[A].currentlyPressed {
-				result &^= 0x1
-			}
-
-			if buttons[B].currentlyPressed {
-				result &^= 0x2
-			}
-
-			if buttons[SELECT].currentlyPressed {
-				result &^= 0x4
-			}
-
-			if buttons[START].currentlyPressed {
-				result &^= 0x8
-			}
-		}
-
-		return result
-	default:
-		panic(fmt.Errorf("unsupported read for ui: %x", addr))
-	}
-}
-
-func (ui *UI) Write(addr uint16, value uint8) {
-	switch addr {
-	case JOYPAD:
-		ui.joypad = value & 0x30
-	default:
-		panic(fmt.Errorf("unsupported write for ui: %x", addr))
-	}
 }
 
 func (ui *UI) Step(cycles int) {
-	ui.cpuCycles += uint64(cycles)
-
-	ui.drawFrameBuffer()
 	ui.handleEvents()
 
 	ui.frames++
 }
 
-func (ui *UI) drawFrameBuffer() {
+func (ui *UI) DrawFrameBuffer(frameBuffer [WIDTH][HEIGHT]uint8) {
+	// Return if ui was not initialized
 	if len(ui.pixels) == 0 {
 		return
 	}
-
-	frameBuffer := ui.PPU.GetFrameBuffer()
 
 	for y := range HEIGHT {
 		for x := range WIDTH {
@@ -302,21 +223,6 @@ func (ui *UI) handleEvents() {
 	}
 
 	ui.updateButtonsState()
-
-	dpadPressed, buttonPressed := false, false
-
-	if ui.joypad&0x10 == 0 {
-		dpadPressed = buttons[UP].justPressed || buttons[DOWN].justPressed || buttons[LEFT].justPressed || buttons[RIGHT].justPressed
-	}
-
-	if ui.joypad&0x20 == 0 {
-		buttonPressed = buttons[A].justPressed || buttons[B].justPressed || buttons[START].justPressed || buttons[SELECT].justPressed
-	}
-
-	// Trigger interrupt on rising edge
-	if dpadPressed || buttonPressed {
-		ui.CPU.RequestInterrupt(INTERRUPT_CODE)
-	}
 
 	fpsTarget := FPS
 
@@ -386,6 +292,17 @@ func (ui *UI) updateButtonsState() {
 		buttons[i].currentlyPressed = currentlyPressed
 		buttons[i].justPressed = !previouslyPressed && currentlyPressed
 	}
+
+	right := buttons[RIGHT].currentlyPressed
+	a := buttons[A].currentlyPressed
+	left := buttons[LEFT].currentlyPressed
+	b := buttons[B].currentlyPressed
+	selectB := buttons[SELECT].currentlyPressed
+	up := buttons[UP].currentlyPressed
+	start := buttons[START].currentlyPressed
+	down := buttons[DOWN].currentlyPressed
+
+	ui.Joypad.UpdateButtons(a, b, right, left, up, down, selectB, start)
 }
 
 func (ui *UI) updateTitleFPS() {

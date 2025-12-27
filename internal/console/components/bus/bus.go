@@ -46,7 +46,7 @@ type Bus struct {
 	PPU       rw
 	Serial    rw
 	DMA       rw
-	UI        rw
+	Joypad    rw
 
 	bootROM     []uint8
 	hideBootROM uint8
@@ -134,7 +134,7 @@ func (b *Bus) Read(addr uint16) uint8 {
 	case addr >= UNUSED_START && addr <= UNUSED_END:
 		return 0xFF
 	case addr == 0xFF00:
-		return b.UI.Read(addr)
+		return b.Joypad.Read(addr)
 	// TODO: apu
 	case addr >= 0xFF10 && addr <= 0xFF3F:
 		return 0xFF
@@ -165,7 +165,7 @@ func (b *Bus) Write(addr uint16, value uint8) {
 		b.Memory.Write(addr-ECHO_START+WRAM_START, value)
 	case addr >= UNUSED_START && addr <= UNUSED_END:
 	case addr == 0xFF00:
-		b.UI.Write(addr, value)
+		b.Joypad.Write(addr, value)
 	// TODO: apu
 	case addr >= 0xFF10 && addr <= 0xFF3F:
 	default:

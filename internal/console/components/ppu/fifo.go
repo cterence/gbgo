@@ -13,45 +13,9 @@ type pixel struct {
 	BGWPriority bool
 }
 
-type fifo[T any] struct {
-	Elements []T
-	Head     int
-	Tail     int
-	Count    int
-}
-
-func (f *fifo[T]) push(p T) {
-	if f.Count == len(f.Elements) {
-		return
-	}
-
-	f.Elements[f.Tail] = p
-	f.Tail = (f.Tail + 1) % len(f.Elements)
-	f.Count++
-}
-
-func (f *fifo[T]) pop() (T, bool) {
-	if f.Count == 0 {
-		var zero T
-		return zero, false
-	}
-
-	p := f.Elements[f.Head]
-	f.Head = (f.Head + 1) % len(f.Elements)
-	f.Count--
-
-	return p, true
-}
-
-func (f *fifo[T]) clear() {
-	f.Count = 0
-	f.Head = 0
-	f.Tail = 0
-}
-
 func (p *PPU) fetchBGWPixels() {
 	// Only fetch if fifo empty
-	if p.BackgroundFIFO.Count > 0 {
+	if p.BackgroundFIFO.GetCount() > 0 {
 		return
 	}
 
@@ -105,7 +69,7 @@ func (p *PPU) fetchBGWPixels() {
 			Color:    (p.BGP >> (colorIdx * 2)) & 0x3,
 		}
 
-		p.BackgroundFIFO.push(pixel)
+		p.BackgroundFIFO.Push(pixel)
 	}
 
 	p.FetchedX += 8
@@ -169,13 +133,13 @@ func (p *PPU) fetchObjPixels() {
 		}
 
 		fifoIdx := px - startPixel
-		if fifoIdx < p.ObjectFIFO.Count {
-			// Only overwrite if existing pixel is transparent
-			if p.ObjectFIFO.Elements[fifoIdx].ColorIdx == 0 {
-				p.ObjectFIFO.Elements[fifoIdx] = newPixel
+		if fifoIdx < p.ObjectFIFO.GetCount() {
+			// Overwrite existing object in FIFO if it's transparent
+			if p.ObjectFIFO.Peek(fifoIdx).ColorIdx == 0 {
+				p.ObjectFIFO.Replace(fifoIdx, newPixel)
 			}
 		} else {
-			p.ObjectFIFO.push(newPixel)
+			p.ObjectFIFO.Push(newPixel)
 		}
 	}
 
@@ -183,7 +147,7 @@ func (p *PPU) fetchObjPixels() {
 }
 
 func (p *PPU) pushPixelToLCD() {
-	bgPixel, ok := p.BackgroundFIFO.pop()
+	bgPixel, ok := p.BackgroundFIFO.Pop()
 	if !ok {
 		return
 	}
@@ -195,7 +159,7 @@ func (p *PPU) pushPixelToLCD() {
 
 	finalPixel := bgPixel
 
-	objPixel, ok := p.ObjectFIFO.pop()
+	objPixel, ok := p.ObjectFIFO.Pop()
 	if ok {
 		if p.ObjEnabled && objPixel.ColorIdx != 0 && (!objPixel.BGWPriority || bgPixel.ColorIdx == 0) {
 			finalPixel = objPixel

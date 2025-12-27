@@ -64,6 +64,10 @@ type cpu interface {
 	RequestInterrupt(code uint8)
 }
 
+type ui interface {
+	DrawFrameBuffer([WIDTH][HEIGHT]uint8)
+}
+
 type object struct {
 	Y       uint8
 	X       uint8
@@ -83,15 +87,14 @@ type frameBuffer [WIDTH][HEIGHT]uint8
 type PPU struct {
 	Bus bus
 	CPU cpu
+	UI  ui
 	state
 }
 
 type state struct {
 	// Pixel FIFO / fetcher
-	BackgroundFIFO fifo[pixel]
-	ObjectFIFO     fifo[pixel]
-
-	FrameBufferFIFO fifo[frameBuffer]
+	BackgroundFIFO lib.FIFO[pixel]
+	ObjectFIFO     lib.FIFO[pixel]
 
 	LineCycles int
 
@@ -186,9 +189,8 @@ func (p *PPU) Init() {
 	p.OAM = [OAM_SIZE]uint8{}
 	p.Objects = [10]object{}
 
-	p.BackgroundFIFO.Elements = make([]pixel, PIXEL_FIFO_SIZE)
-	p.ObjectFIFO.Elements = make([]pixel, PIXEL_FIFO_SIZE)
-	p.FrameBufferFIFO.Elements = make([]frameBuffer, FRAMEBUFFER_SIZE)
+	p.BackgroundFIFO.Init(PIXEL_FIFO_SIZE)
+	p.ObjectFIFO.Init(PIXEL_FIFO_SIZE)
 
 	p.PPUMode = OAM_SCAN
 }
@@ -290,7 +292,7 @@ var tileMapAreas = [2]uint16{0x9800, 0x9C00}
 func (p *PPU) Step(cycles int) {
 	if !p.PPUEnabled {
 		if p.LY != 0 || p.PPUMode != HBLANK {
-			p.FrameBufferFIFO.push(frameBuffer{})
+			p.CurrentFrameBuffer.clear()
 
 			p.LY = 0
 			p.LineCycles = 0
@@ -344,7 +346,7 @@ func (p *PPU) Step(cycles int) {
 				p.PPUMode = VBLANK
 				p.WindowLineCounter = 0
 
-				p.FrameBufferFIFO.push(p.CurrentFrameBuffer)
+				p.UI.DrawFrameBuffer(p.CurrentFrameBuffer)
 				p.CurrentFrameBuffer.clear()
 				p.Frames++
 
@@ -372,15 +374,6 @@ func (p *PPU) Step(cycles int) {
 			}
 		}
 	}
-}
-
-func (p *PPU) GetFrameBuffer() [WIDTH][HEIGHT]uint8 {
-	fb, ok := p.FrameBufferFIFO.pop()
-	if ok {
-		return fb
-	}
-
-	return frameBuffer{}
 }
 
 func (p *PPU) Load(buf *bytes.Reader) {
@@ -438,8 +431,8 @@ func (p *PPU) scanOAM() {
 	p.FetchedObjects = 0
 	p.PushedX = 0
 	p.FetchedX = 0
-	p.BackgroundFIFO.clear()
-	p.ObjectFIFO.clear()
+	p.BackgroundFIFO.Clear()
+	p.ObjectFIFO.Clear()
 	p.WindowTriggered = false
 
 	p.PPUMode = DRAW

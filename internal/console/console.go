@@ -15,6 +15,7 @@ import (
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
 	"github.com/cterence/gbgo/internal/console/components/cpu"
 	"github.com/cterence/gbgo/internal/console/components/dma"
+	"github.com/cterence/gbgo/internal/console/components/joypad"
 	"github.com/cterence/gbgo/internal/console/components/memory"
 	"github.com/cterence/gbgo/internal/console/components/ppu"
 	"github.com/cterence/gbgo/internal/console/components/serial"
@@ -45,6 +46,7 @@ type console struct {
 	cartridge *cartridge.Cartridge
 	bus       *bus.Bus
 	timer     *timer.Timer
+	joypad    *joypad.Joypad
 	ui        *ui.UI
 	ppu       *ppu.PPU
 	serial    *serial.Serial
@@ -105,6 +107,7 @@ func Run(ctx context.Context, romBytes []uint8, romPath, stateDir string, option
 		cartridge: &cartridge.Cartridge{},
 		bus:       &bus.Bus{},
 		timer:     &timer.Timer{},
+		joypad:    &joypad.Joypad{},
 		ui:        &ui.UI{},
 		ppu:       &ppu.PPU{},
 		serial:    &serial.Serial{},
@@ -118,23 +121,23 @@ func Run(ctx context.Context, romBytes []uint8, romPath, stateDir string, option
 	gb.bus.Cartridge = gb.cartridge
 	gb.bus.CPU = gb.cpu
 	gb.bus.DMA = gb.dma
+	gb.bus.Joypad = gb.joypad
 	gb.bus.Memory = gb.memory
 	gb.bus.PPU = gb.ppu
 	gb.bus.Serial = gb.serial
 	gb.bus.Timer = gb.timer
-	gb.bus.UI = gb.ui
 	gb.cpu.Bus = gb.bus
 	gb.cpu.Console = &gb
 	gb.dma.Bus = gb.bus
 	gb.dma.PPU = gb.ppu
+	gb.joypad.CPU = gb.cpu
 	gb.ppu.Bus = gb.bus
 	gb.ppu.CPU = gb.cpu
+	gb.ppu.UI = gb.ui
 	gb.serial.CPU = gb.cpu
 	gb.timer.CPU = gb.cpu
-	gb.ui.Bus = gb.bus
-	gb.ui.CPU = gb.cpu
 	gb.ui.Console = &gb
-	gb.ui.PPU = gb.ppu
+	gb.ui.Joypad = gb.joypad
 
 	err := gb.cartridge.Init(romPath, stateDir, romBytes[0x147], romBytes[0x148], romBytes[0x149])
 	if err != nil {
