@@ -21,9 +21,8 @@ const (
 )
 
 func main() {
-	var opts []console.Option
-
 	var (
+		opts     []console.Option
 		runPProf bool
 	)
 
