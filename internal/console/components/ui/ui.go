@@ -27,6 +27,10 @@ type joypad interface {
 	UpdateButtons(a, b, right, left, up, down, selectB, start bool)
 }
 
+type ppu interface {
+	GetFrame() [WIDTH][HEIGHT]uint8
+}
+
 type buttonState struct {
 	keyboardKeys       []int32
 	gamepadButtons     []int32
@@ -50,10 +54,27 @@ const (
 	RIGHT
 	// Emulator buttons
 	TURBO
-	PAUSE
 	SLOWMO
+	NOLIMIT
+	PAUSE
 	RESET
 )
+
+type UI struct {
+	Console console
+	Joypad  joypad
+	PPU     ppu
+
+	windowTitle string
+	pixels      []rl.Color
+
+	frames  uint64
+	texture rl.Texture2D
+
+	currentFPS int32
+
+	paused bool
+}
 
 var buttons = []buttonState{
 	// A
@@ -109,36 +130,26 @@ var buttons = []buttonState{
 		keyboardKeys:   []int32{rl.KeySpace},
 		gamepadButtons: []int32{rl.GamepadButtonRightTrigger2},
 	},
-	// PAUSE
-	{
-		keyboardKeys:   []int32{rl.KeyRightShift},
-		gamepadButtons: []int32{rl.GamepadButtonMiddle},
-	},
 	// SLOWMO
 	{
 		keyboardKeys:   []int32{rl.KeyLeftShift},
 		gamepadButtons: []int32{rl.GamepadButtonLeftTrigger2},
+	},
+	// NOLIMIT
+	{
+		keyboardKeys:   []int32{rl.KeyZero},
+		gamepadButtons: []int32{},
+	},
+	// PAUSE
+	{
+		keyboardKeys:   []int32{rl.KeyRightShift},
+		gamepadButtons: []int32{rl.GamepadButtonMiddle},
 	},
 	// RESET
 	{
 		keyboardKeys:   []int32{rl.KeyTab},
 		gamepadButtons: []int32{},
 	},
-}
-
-type UI struct {
-	Console console
-	Joypad  joypad
-
-	windowTitle string
-	pixels      []rl.Color
-
-	frames  uint64
-	texture rl.Texture2D
-
-	currentFPS int32
-
-	paused bool
 }
 
 var palette = [4]rl.Color{
@@ -171,17 +182,8 @@ func (ui *UI) Init(romPath string) {
 	ui.pixels = make([]rl.Color, WIDTH*HEIGHT)
 }
 
-func (ui *UI) Step(cycles int) {
-	ui.handleEvents()
-
-	ui.frames++
-}
-
-func (ui *UI) DrawFrameBuffer(frameBuffer [WIDTH][HEIGHT]uint8) {
-	// Return if ui was not initialized
-	if len(ui.pixels) == 0 {
-		return
-	}
+func (ui *UI) DrawFrame() {
+	frameBuffer := ui.PPU.GetFrame()
 
 	for y := range HEIGHT {
 		for x := range WIDTH {
@@ -213,13 +215,13 @@ func (ui *UI) DrawFrameBuffer(frameBuffer [WIDTH][HEIGHT]uint8) {
 	rl.BeginDrawing()
 	rl.DrawTexturePro(ui.texture, src, dst, rl.Vector2{}, 0, rl.White)
 	rl.EndDrawing()
+
+	ui.frames++
 }
 
-func (ui *UI) handleEvents() {
+func (ui *UI) HandleEvents() {
 	if rl.WindowShouldClose() {
 		ui.Console.Shutdown()
-
-		return
 	}
 
 	ui.updateButtonsState()
@@ -232,6 +234,10 @@ func (ui *UI) handleEvents() {
 
 	if buttons[TURBO].currentlyPressed {
 		fpsTarget = FPS * 4
+	}
+
+	if buttons[NOLIMIT].currentlyPressed {
+		fpsTarget = 0
 	}
 
 	rl.SetTargetFPS(int32(fpsTarget))
@@ -255,7 +261,7 @@ func (ui *UI) handleEvents() {
 	ui.currentFPS = rl.GetFPS()
 
 	// Update FPS in title every second
-	if !ui.paused && ui.frames%uint64(fpsTarget) == 0 {
+	if !ui.paused && ui.frames%uint64(FPS) == 0 {
 		ui.updateTitleFPS()
 	}
 }

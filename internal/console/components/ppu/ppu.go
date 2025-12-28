@@ -64,10 +64,6 @@ type cpu interface {
 	RequestInterrupt(code uint8)
 }
 
-type ui interface {
-	DrawFrameBuffer([WIDTH][HEIGHT]uint8)
-}
-
 type object struct {
 	Y       uint8
 	X       uint8
@@ -87,7 +83,6 @@ type frameBuffer [WIDTH][HEIGHT]uint8
 type PPU struct {
 	Bus bus
 	CPU cpu
-	UI  ui
 	state
 }
 
@@ -99,6 +94,7 @@ type state struct {
 	LineCycles int
 
 	CurrentFrameBuffer frameBuffer
+	CompletedFrame     frameBuffer
 
 	VRAM        [VRAM_SIZE]uint8
 	OAM         [OAM_SIZE]uint8
@@ -144,7 +140,8 @@ type state struct {
 
 	DMAActive bool
 
-	Frames uint64
+	Frames     uint64
+	FrameReady bool
 }
 
 func (p *PPU) Init() {
@@ -185,9 +182,11 @@ func (p *PPU) Init() {
 	p.LYCEqLy = false
 	p.PPUMode = OAM_SCAN
 	p.CurrentFrameBuffer = frameBuffer{}
+	p.CompletedFrame = frameBuffer{}
 	p.VRAM = [VRAM_SIZE]uint8{}
 	p.OAM = [OAM_SIZE]uint8{}
 	p.Objects = [10]object{}
+	p.FrameReady = false
 
 	p.BackgroundFIFO.Init(PIXEL_FIFO_SIZE)
 	p.ObjectFIFO.Init(PIXEL_FIFO_SIZE)
@@ -346,9 +345,10 @@ func (p *PPU) Step(cycles int) {
 				p.PPUMode = VBLANK
 				p.WindowLineCounter = 0
 
-				p.UI.DrawFrameBuffer(p.CurrentFrameBuffer)
+				copy(p.CompletedFrame[:], p.CurrentFrameBuffer[:])
 				p.CurrentFrameBuffer.clear()
 				p.Frames++
+				p.FrameReady = true
 
 				p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
 
@@ -388,6 +388,15 @@ func (p *PPU) Save(buf *bytes.Buffer) {
 	err := enc.Encode(p.state)
 
 	lib.Assert(err == nil, "failed to encode state: %v", err)
+}
+
+func (p *PPU) GetFrame() [WIDTH][HEIGHT]uint8 {
+	p.FrameReady = false
+	return p.CompletedFrame
+}
+
+func (p *PPU) IsFrameReady() bool {
+	return p.FrameReady
 }
 
 func (p *PPU) scanOAM() {

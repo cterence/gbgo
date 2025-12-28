@@ -22,8 +22,8 @@ const (
 
 func main() {
 	var (
-		opts     []console.Option
-		runPProf bool
+		opts      []console.Option
+		pprofChan chan struct{}
 	)
 
 	cmd := &cli.Command{
@@ -31,10 +31,37 @@ func main() {
 		Usage: "gameboy emulator",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{
-				Name:        "pprof",
-				Aliases:     []string{"p"},
-				Usage:       "create pprof file on exit at " + PPROF_FILE,
-				Destination: &runPProf,
+				Name:    "pprof",
+				Aliases: []string{"p"},
+				Usage:   "create pprof file on exit at " + PPROF_FILE,
+				Action: func(ctx context.Context, _ *cli.Command, b bool) error {
+					pprofChan = make(chan struct{})
+
+					go func() {
+						defer close(pprofChan)
+
+						f, err := os.Create(PPROF_FILE)
+						if err != nil {
+							fmt.Printf("failed to create pprof file: %v\n", err)
+						}
+
+						defer func() {
+							if err := f.Close(); err != nil {
+								fmt.Printf("failed to close pprof file: %v\n", err)
+							}
+						}()
+
+						if err := pprof.StartCPUProfile(f); err != nil {
+							fmt.Println("failed to start CPU profile: %w", err)
+						}
+
+						defer pprof.StopCPUProfile()
+
+						<-ctx.Done()
+					}()
+
+					return nil
+				},
 			},
 
 			&cli.BoolFlag{
@@ -103,25 +130,6 @@ func main() {
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			if runPProf {
-				f, err := os.Create(PPROF_FILE)
-				if err != nil {
-					fmt.Printf("failed to create pprof file: %v\n", err)
-				}
-
-				defer func() {
-					if err := f.Close(); err != nil {
-						fmt.Printf("failed to close pprof file: %v\n", err)
-					}
-				}()
-
-				if err := pprof.StartCPUProfile(f); err != nil {
-					return fmt.Errorf("failed to start CPU profile: %w", err)
-				}
-
-				defer pprof.StopCPUProfile()
-			}
-
 			romPath := cmd.Args().First()
 
 			if romPath == "" {
@@ -173,11 +181,7 @@ func main() {
 				return err
 			}
 
-			if err := console.Run(ctx, romBytes, romPath, stateDir, opts...); err != nil {
-				return err
-			}
-
-			return nil
+			return console.Run(romBytes, romPath, stateDir, opts...)
 		},
 		Commands: []*cli.Command{
 			{
@@ -203,7 +207,18 @@ func main() {
 		},
 	}
 
-	if err := cmd.Run(context.Background(), os.Args); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	err := cmd.Run(ctx, os.Args)
+
+	cancel()
+
+	// Stop profiling if active
+	if pprofChan != nil {
+		<-pprofChan
+	}
+
+	if err != nil {
 		fmt.Printf("runtime error: %v\n", err)
 		os.Exit(1)
 	}

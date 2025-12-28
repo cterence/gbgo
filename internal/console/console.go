@@ -2,7 +2,6 @@ package console
 
 import (
 	"bytes"
-	"context"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -52,8 +51,6 @@ type console struct {
 	serial    *serial.Serial
 	dma       *dma.DMA
 
-	cancel context.CancelFunc
-
 	romPath  string
 	stateDir string
 
@@ -61,10 +58,11 @@ type console struct {
 	busOptions    []bus.Option
 	serialOptions []serial.Option
 
-	headless bool
-	stopped  bool
-	paused   bool
-	noState  bool
+	headless    bool
+	stopped     bool
+	paused      bool
+	noState     bool
+	shouldClose bool
 }
 
 type Option func(*console)
@@ -94,12 +92,8 @@ func WithBootROM(bootRom []uint8) Option {
 	}
 }
 
-func Run(ctx context.Context, romBytes []uint8, romPath, stateDir string, options ...Option) error {
-	gbCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
+func Run(romBytes []uint8, romPath, stateDir string, options ...Option) error {
 	gb := console{
-		cancel:    cancel,
 		romPath:   romPath,
 		stateDir:  stateDir,
 		cpu:       &cpu.CPU{},
@@ -133,18 +127,23 @@ func Run(ctx context.Context, romBytes []uint8, romPath, stateDir string, option
 	gb.joypad.CPU = gb.cpu
 	gb.ppu.Bus = gb.bus
 	gb.ppu.CPU = gb.cpu
-	gb.ppu.UI = gb.ui
 	gb.serial.CPU = gb.cpu
 	gb.timer.CPU = gb.cpu
 	gb.ui.Console = &gb
 	gb.ui.Joypad = gb.joypad
+	gb.ui.PPU = gb.ppu
 
 	err := gb.cartridge.Init(romPath, stateDir, romBytes[0x147], romBytes[0x148], romBytes[0x149])
 	if err != nil {
 		return fmt.Errorf("failed to init cartridge: %w", err)
 	}
+	defer gb.cartridge.Close()
 
 	gb.Reset()
+
+	if !gb.headless {
+		defer gb.ui.Close()
+	}
 
 	for i, b := range romBytes {
 		gb.cartridge.Load(uint32(i), b)
@@ -152,47 +151,37 @@ func Run(ctx context.Context, romBytes []uint8, romPath, stateDir string, option
 
 	if !gb.noState {
 		gb.loadState()
+		defer gb.saveState()
 	}
 
-	uiCycles := 0
+	totalCycles := uint64(0)
 
-	for {
-		cycles := 0
-
-		if !gb.stopped && !gb.paused {
-			cycles = gb.cpu.Step()
-			gb.timer.Step(cycles)
-		}
+	for !gb.shouldClose {
+		cycles := 4
 
 		if !gb.paused {
+			if !gb.stopped {
+				cycles = gb.cpu.Step()
+				gb.timer.Step(cycles)
+			}
+
 			gb.serial.Step(cycles)
 			gb.dma.Step(cycles)
 
-			for range cycles {
-				gb.ppu.Step(1)
+			for range cycles / 2 {
+				gb.ppu.Step(2)
 			}
 		}
 
-		if gb.paused {
-			cycles = 4
+		if !gb.headless && (gb.ppu.IsFrameReady() || gb.paused) {
+			gb.ui.HandleEvents()
+			gb.ui.DrawFrame()
 		}
 
-		uiCycles += cycles
-		if !gb.headless && uiCycles >= FRAME_CYCLES {
-			gb.ui.Step(cycles)
-
-			uiCycles -= FRAME_CYCLES
-		}
-
-		// Check context every frame cycle
-		if uiCycles == 0 {
-			select {
-			case <-gbCtx.Done():
-				return nil
-			default:
-			}
-		}
+		totalCycles += uint64(cycles)
 	}
+
+	return nil
 }
 
 func (gb *console) Reset() {
@@ -236,14 +225,7 @@ func Disassemble(romBytes []uint8) error {
 }
 
 func (gb *console) Shutdown() {
-	gb.cancel()
-	gb.cartridge.Close()
-
-	if !gb.noState {
-		gb.saveState()
-	}
-
-	log.Debug("[console] shutdown")
+	gb.shouldClose = true
 }
 
 func (gb *console) Pause() {
