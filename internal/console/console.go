@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/cterence/gbgo/internal/console/components/bus"
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
@@ -22,13 +21,6 @@ import (
 	"github.com/cterence/gbgo/internal/console/components/timer"
 	"github.com/cterence/gbgo/internal/console/components/ui"
 	"github.com/cterence/gbgo/internal/log"
-)
-
-const (
-	CPU_FREQ     = 4194304
-	FPS          = 60
-	FRAME_CYCLES = 70224
-	FRAME_TIME   = time.Second / FPS
 )
 
 type serializable interface {
