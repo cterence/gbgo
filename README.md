@@ -16,12 +16,12 @@ A Game Boy emulator written in Golang.
 - [x] Serializable interface for state save
 - [x] Central location for storing save / state files
 - [x] Save state
+- [x] Trace ring buffer
+- [x] CPU debug to file with goroutines
 - [ ] Fix state restore PPU buggy on dmg-acid2
 - [ ] Window with tile data
 - [ ] Debug overlay
 - [ ] Runtime assertions
-- [ ] Trace ring buffer
-- [ ] CPU debug to file with goroutines
 - [ ] APU
 - [ ] Release cross-platform binaries (goreleaser)
 - [ ] Pass mooneye tests

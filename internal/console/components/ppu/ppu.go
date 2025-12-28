@@ -93,6 +93,8 @@ type state struct {
 
 	LineCycles int
 
+	Frames uint64
+
 	CurrentFrameBuffer frameBuffer
 	CompletedFrame     frameBuffer
 
@@ -140,7 +142,6 @@ type state struct {
 
 	DMAActive bool
 
-	Frames     uint64
 	FrameReady bool
 }
 
@@ -310,12 +311,12 @@ func (p *PPU) Step(cycles int) {
 		}
 
 	case DRAW:
-		for p.FetchedObjects < p.ObjectCount && p.Objects[p.FetchedObjects].X <= p.PushedX+X_OFFSET {
+		if p.FetchedObjects < p.ObjectCount && p.Objects[p.FetchedObjects].X <= p.PushedX+X_OFFSET {
 			p.fetchObjPixels()
+		} else {
+			p.fetchBGWPixels()
+			p.pushPixelToLCD()
 		}
-
-		p.fetchBGWPixels()
-		p.pushPixelToLCD()
 
 		if p.PushedX >= WIDTH {
 			p.PPUMode = HBLANK

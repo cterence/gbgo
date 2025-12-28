@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/cterence/gbgo/internal/lib"
-	"github.com/cterence/gbgo/internal/log"
 )
 
 type bus interface {
@@ -18,9 +17,14 @@ type console interface {
 	Stop()
 }
 
+type debugger interface {
+	Push(trace string)
+}
+
 type CPU struct {
-	Bus     bus
-	Console console
+	Bus      bus
+	Console  console
+	Debugger debugger
 	state
 }
 
@@ -59,9 +63,9 @@ const (
 	IE                    = 0xFFFF
 )
 
-func WithDebug(debug bool) Option {
+func WithDebug() Option {
 	return func(c *CPU) {
-		c.Debug = debug
+		c.Debug = true
 	}
 }
 
@@ -72,8 +76,7 @@ func WithBootROM() Option {
 }
 
 func (c *CPU) String() string {
-	// return fmt.Sprintf("%-12s - A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X PCMEM:%02X,%02X,%02X,%02X", c.CurrentOpcode, c.A, c.F, c.B, c.C, c.D, c.E, c.H, c.L, c.SP, c.PC, c.Bus.Read(c.PC), c.Bus.Read(c.PC+1), c.Bus.Read(c.PC+2), c.Bus.Read(c.PC+3))
-	return fmt.Sprintf(" %04x: %02x %02x %02x  A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x",
+	return fmt.Sprintf("%04x: %02x %02x %02x  A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x",
 		c.PC, c.Bus.Read(c.PC), c.Bus.Read(c.PC+1), c.Bus.Read(c.PC+2), c.A, c.F, c.B, c.C, c.D, c.E, c.H, c.L, c.SP)
 }
 
@@ -135,8 +138,8 @@ func (c *CPU) Step() int {
 		cycles = c.handleInterrupts()
 	}
 
-	if log.DebugEnabled {
-		fmt.Println(c)
+	if c.Debug {
+		c.Debugger.Push(c.String())
 	}
 
 	opcode := c.getOpcode()

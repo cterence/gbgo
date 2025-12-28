@@ -13,6 +13,7 @@ import (
 	"github.com/cterence/gbgo/internal/console/components/bus"
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
 	"github.com/cterence/gbgo/internal/console/components/cpu"
+	"github.com/cterence/gbgo/internal/console/components/debugger"
 	"github.com/cterence/gbgo/internal/console/components/dma"
 	"github.com/cterence/gbgo/internal/console/components/joypad"
 	"github.com/cterence/gbgo/internal/console/components/memory"
@@ -50,6 +51,7 @@ type console struct {
 	ppu       *ppu.PPU
 	serial    *serial.Serial
 	dma       *dma.DMA
+	debugger  *debugger.Debugger
 
 	romPath  string
 	stateDir string
@@ -63,6 +65,7 @@ type console struct {
 	paused      bool
 	noState     bool
 	shouldClose bool
+	debug       bool
 }
 
 type Option func(*console)
@@ -82,6 +85,13 @@ func WithPrintSerial() Option {
 func WithNoState() Option {
 	return func(c *console) {
 		c.noState = true
+	}
+}
+
+func WithDebug() Option {
+	return func(c *console) {
+		c.debug = true
+		c.cpuOptions = append(c.cpuOptions, cpu.WithDebug())
 	}
 }
 
@@ -106,6 +116,7 @@ func Run(romBytes []uint8, romPath, stateDir string, options ...Option) error {
 		ppu:       &ppu.PPU{},
 		serial:    &serial.Serial{},
 		dma:       &dma.DMA{},
+		debugger:  &debugger.Debugger{},
 	}
 
 	for _, o := range options {
@@ -122,6 +133,7 @@ func Run(romBytes []uint8, romPath, stateDir string, options ...Option) error {
 	gb.bus.Timer = gb.timer
 	gb.cpu.Bus = gb.bus
 	gb.cpu.Console = &gb
+	gb.cpu.Debugger = gb.debugger
 	gb.dma.Bus = gb.bus
 	gb.dma.PPU = gb.ppu
 	gb.joypad.CPU = gb.cpu
@@ -191,6 +203,10 @@ func (gb *console) Reset() {
 	gb.timer.Init()
 	gb.ppu.Init()
 	gb.serial.Init(gb.serialOptions...)
+
+	if gb.debug {
+		gb.debugger.Init(os.Stdout)
+	}
 
 	if !gb.headless {
 		gb.ui.Init(gb.romPath)

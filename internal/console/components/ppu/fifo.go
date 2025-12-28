@@ -8,7 +8,7 @@ const (
 )
 
 type pixel struct {
-	ColorIdx    uint8
+	Transparent bool
 	Color       uint8
 	BGWPriority bool
 }
@@ -65,8 +65,8 @@ func (p *PPU) fetchBGWPixels() {
 		hiPx := (tileHi >> (7 - b)) & 0x1
 		colorIdx := hiPx<<1 | loPx
 		pixel := pixel{
-			ColorIdx: colorIdx,
-			Color:    (p.BGP >> (colorIdx * 2)) & 0x3,
+			Transparent: colorIdx == 0,
+			Color:       (p.BGP >> (colorIdx * 2)) & 0x3,
 		}
 
 		p.BackgroundFIFO.Push(pixel)
@@ -76,7 +76,6 @@ func (p *PPU) fetchBGWPixels() {
 }
 
 func (p *PPU) fetchObjPixels() {
-	// Only fetch if fifo empty
 	obj := p.Objects[p.FetchedObjects]
 
 	size := uint8(8)
@@ -127,19 +126,18 @@ func (p *PPU) fetchObjPixels() {
 		colorIdx := hiPx<<1 | loPx
 
 		newPixel := pixel{
-			ColorIdx:    colorIdx,
+			Transparent: colorIdx == 0,
 			Color:       (obp >> (colorIdx * 2)) & 0x3,
 			BGWPriority: obj.BGWPriority,
 		}
 
 		fifoIdx := px - startPixel
-		if fifoIdx < p.ObjectFIFO.GetCount() {
-			// Overwrite existing object in FIFO if it's transparent
-			if p.ObjectFIFO.Peek(fifoIdx).ColorIdx == 0 {
+		if fifoIdx >= p.ObjectFIFO.GetCount() {
+			p.ObjectFIFO.Push(newPixel)
+		} else {
+			if p.ObjectFIFO.Peek(fifoIdx).Transparent {
 				p.ObjectFIFO.Replace(fifoIdx, newPixel)
 			}
-		} else {
-			p.ObjectFIFO.Push(newPixel)
 		}
 	}
 
@@ -147,6 +145,14 @@ func (p *PPU) fetchObjPixels() {
 }
 
 func (p *PPU) pushPixelToLCD() {
+	if p.DiscardedPixels < p.SCX%8 {
+		p.BackgroundFIFO.Pop()
+		p.ObjectFIFO.Pop()
+		p.DiscardedPixels++
+
+		return
+	}
+
 	bgPixel, ok := p.BackgroundFIFO.Pop()
 	if !ok {
 		return
@@ -154,21 +160,16 @@ func (p *PPU) pushPixelToLCD() {
 
 	if !p.BGWEnabled {
 		bgPixel.Color = 0
-		bgPixel.ColorIdx = 0
+		bgPixel.Transparent = true
 	}
 
 	finalPixel := bgPixel
 
 	objPixel, ok := p.ObjectFIFO.Pop()
 	if ok {
-		if p.ObjEnabled && objPixel.ColorIdx != 0 && (!objPixel.BGWPriority || bgPixel.ColorIdx == 0) {
+		if p.ObjEnabled && !objPixel.Transparent && (!objPixel.BGWPriority || bgPixel.Transparent) {
 			finalPixel = objPixel
 		}
-	}
-
-	if p.DiscardedPixels < p.SCX%8 {
-		p.DiscardedPixels++
-		return
 	}
 
 	p.CurrentFrameBuffer[p.PushedX][p.LY] = finalPixel.Color

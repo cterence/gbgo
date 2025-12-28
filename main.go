@@ -71,6 +71,8 @@ func main() {
 				Action: func(_ context.Context, _ *cli.Command, b bool) error {
 					log.DebugEnabled = b
 
+					opts = append(opts, console.WithDebug())
+
 					return nil
 				},
 			},
@@ -208,7 +210,6 @@ func main() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
 	err := cmd.Run(ctx, os.Args)
 
 	cancel()
