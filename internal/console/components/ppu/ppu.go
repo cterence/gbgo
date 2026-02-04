@@ -56,11 +56,11 @@ const (
 	DRAW
 )
 
-type bus interface {
+type Bus interface {
 	Read(addr uint16) uint8
 }
 
-type cpu interface {
+type CPU interface {
 	RequestInterrupt(code uint8)
 }
 
@@ -81,8 +81,8 @@ type object struct {
 type frameBuffer [WIDTH][HEIGHT]uint8
 
 type PPU struct {
-	Bus bus
-	CPU cpu
+	bus Bus
+	cpu CPU
 	state
 }
 
@@ -145,7 +145,9 @@ type state struct {
 	FrameReady bool
 }
 
-func (p *PPU) Init() {
+func (p *PPU) Init(bus Bus, cpu CPU) {
+	p.bus = bus
+	p.cpu = cpu
 	p.LineCycles = 0
 	p.setLCDC(0)
 	p.setSTAT(0)
@@ -319,7 +321,7 @@ func (p *PPU) Step(cycles int) {
 			p.PPUMode = HBLANK
 
 			if p.HBlankInt {
-				p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
+				p.cpu.RequestInterrupt(STAT_INTERRUPT_CODE)
 			}
 
 			break
@@ -348,10 +350,10 @@ func (p *PPU) Step(cycles int) {
 				p.Frames++
 				p.FrameReady = true
 
-				p.CPU.RequestInterrupt(VBLANK_INTERRUPT_CODE)
+				p.cpu.RequestInterrupt(VBLANK_INTERRUPT_CODE)
 
 				if p.VBlankInt {
-					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
+					p.cpu.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
 		}
@@ -367,7 +369,7 @@ func (p *PPU) Step(cycles int) {
 				p.LY = 0
 
 				if p.OAMInt {
-					p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
+					p.cpu.RequestInterrupt(STAT_INTERRUPT_CODE)
 				}
 			}
 		}
@@ -503,7 +505,7 @@ func (p *PPU) checkLYC() {
 	p.LYCEqLy = p.LY == p.LYC
 
 	if p.LYCEqLy && p.LYCInt {
-		p.CPU.RequestInterrupt(STAT_INTERRUPT_CODE)
+		p.cpu.RequestInterrupt(STAT_INTERRUPT_CODE)
 	}
 }
 

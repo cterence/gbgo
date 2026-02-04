@@ -9,12 +9,12 @@ const (
 	INTERRUPT_CODE = 0x10
 )
 
-type cpu interface {
+type CPU interface {
 	RequestInterrupt(code uint8)
 }
 
 type Joypad struct {
-	CPU    cpu
+	cpu    CPU
 	joypad uint8
 
 	a       bool
@@ -27,7 +27,8 @@ type Joypad struct {
 	selectB bool
 }
 
-func (j *Joypad) Init() {
+func (j *Joypad) Init(cpu CPU) {
+	j.cpu = cpu
 	j.joypad = 0xCF
 }
 
@@ -89,7 +90,7 @@ func (j *Joypad) Write(addr uint16, value uint8) {
 
 func (j *Joypad) UpdateButtons(a, b, right, left, up, down, selectB, start bool) {
 	if (a && !j.a) || (b && !j.b) || (right && !j.right) || (up && !j.up) || (down && !j.down) || (left && !j.left) || (start && !j.start) || (selectB && !j.selectB) {
-		j.CPU.RequestInterrupt(INTERRUPT_CODE)
+		j.cpu.RequestInterrupt(INTERRUPT_CODE)
 	}
 
 	j.a = a

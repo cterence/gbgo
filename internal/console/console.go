@@ -115,28 +115,6 @@ func Run(romBytes []uint8, romPath, stateDir string, options ...Option) error {
 		o(&gb)
 	}
 
-	gb.bus.Cartridge = gb.cartridge
-	gb.bus.CPU = gb.cpu
-	gb.bus.DMA = gb.dma
-	gb.bus.Joypad = gb.joypad
-	gb.bus.Memory = gb.memory
-	gb.bus.PPU = gb.ppu
-	gb.bus.Serial = gb.serial
-	gb.bus.Timer = gb.timer
-	gb.cpu.Bus = gb.bus
-	gb.cpu.Console = &gb
-	gb.cpu.Debugger = gb.debugger
-	gb.dma.Bus = gb.bus
-	gb.dma.PPU = gb.ppu
-	gb.joypad.CPU = gb.cpu
-	gb.ppu.Bus = gb.bus
-	gb.ppu.CPU = gb.cpu
-	gb.serial.CPU = gb.cpu
-	gb.timer.CPU = gb.cpu
-	gb.ui.Console = &gb
-	gb.ui.Joypad = gb.joypad
-	gb.ui.PPU = gb.ppu
-
 	err := gb.cartridge.Init(romPath, stateDir, romBytes[0x147], romBytes[0x148], romBytes[0x149])
 	if err != nil {
 		return fmt.Errorf("failed to init cartridge: %w", err)
@@ -189,19 +167,21 @@ func Run(romBytes []uint8, romPath, stateDir string, options ...Option) error {
 }
 
 func (gb *console) Reset() {
-	gb.cpu.Init(gb.cpuOptions...)
+	gb.cpu.Init(gb.bus, gb, gb.debugger, gb.cpuOptions...)
 	gb.memory.Init()
-	gb.bus.Init(gb.busOptions...)
-	gb.timer.Init()
-	gb.ppu.Init()
-	gb.serial.Init(gb.serialOptions...)
+	gb.bus.Init(gb.memory, gb.cartridge, gb.cpu, gb.timer, gb.ppu, gb.serial, gb.dma, gb.joypad, gb.busOptions...)
+	gb.timer.Init(gb.cpu)
+	gb.ppu.Init(gb.bus, gb.cpu)
+	gb.serial.Init(gb.cpu, gb.serialOptions...)
+	gb.dma.Init(gb.bus, gb.ppu)
+	gb.joypad.Init(gb.cpu)
 
 	if gb.debug {
 		gb.debugger.Init(os.Stdout)
 	}
 
 	if !gb.headless {
-		gb.ui.Init(gb.romPath)
+		gb.ui.Init(gb, gb.joypad, gb.ppu, gb.romPath)
 	}
 }
 

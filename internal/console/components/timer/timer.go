@@ -19,12 +19,12 @@ const (
 	INTERRUPT_CODE = 0x4
 )
 
-type cpu interface {
+type CPU interface {
 	RequestInterrupt(code uint8)
 }
 
 type Timer struct {
-	CPU cpu
+	cpu CPU
 	state
 }
 
@@ -39,7 +39,8 @@ type state struct {
 
 var timaFreqs = []int{1024, 16, 64, 256}
 
-func (t *Timer) Init() {
+func (t *Timer) Init(cpu CPU) {
+	t.cpu = cpu
 	t.TIMACPUCycles = 0
 	t.DIV = 0
 	t.TIMA = 0
@@ -63,7 +64,7 @@ func (t *Timer) Step(cycles int) {
 
 		if t.TIMA == 0 {
 			t.TIMA = t.TMA
-			t.CPU.RequestInterrupt(INTERRUPT_CODE)
+			t.cpu.RequestInterrupt(INTERRUPT_CODE)
 		}
 	}
 }

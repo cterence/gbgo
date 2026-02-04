@@ -122,10 +122,10 @@ func (c *CPU) load(opc *Opcode) int {
 	case "n16":
 		v16 = c.fetchWord()
 	case "a16":
-		v8 = c.Bus.Read(c.fetchWord())
+		v8 = c.bus.Read(c.fetchWord())
 	case "BC", "DE", "HL":
 		if !op1.Immediate {
-			v8 = c.Bus.Read(c.getDOp(op1.Name))
+			v8 = c.bus.Read(c.getDOp(op1.Name))
 
 			if op1.Increment {
 				c.setDOp(op1.Name, c.getDOp(op1.Name)+1)
@@ -154,7 +154,7 @@ func (c *CPU) load(opc *Opcode) int {
 		c.setOp(op0.Name, v8)
 	case "BC", "DE", "HL", "SP":
 		if !op0.Immediate {
-			c.Bus.Write(c.getDOp(op0.Name), v8)
+			c.bus.Write(c.getDOp(op0.Name), v8)
 
 			if op0.Increment {
 				c.setDOp(op0.Name, c.getDOp(op0.Name)+1)
@@ -169,12 +169,12 @@ func (c *CPU) load(opc *Opcode) int {
 	case "a16":
 		word := c.fetchWord()
 		if op1.Name == "SP" {
-			c.Bus.Write(word, uint8(c.SP))
-			c.Bus.Write(word+1, uint8(c.SP>>8))
+			c.bus.Write(word, uint8(c.SP))
+			c.bus.Write(word+1, uint8(c.SP>>8))
 		}
 
 		if op1.Name == "A" {
-			c.Bus.Write(word, c.A)
+			c.bus.Write(word, c.A)
 		}
 	default:
 		panic("unimplemented op0 for load: " + op0.Name)
@@ -189,16 +189,16 @@ func (c *CPU) loadH(opc *Opcode) int {
 
 	switch op0.Name {
 	case "a8":
-		c.Bus.Write(0xFF00|uint16(c.fetchByte()), c.A)
+		c.bus.Write(0xFF00|uint16(c.fetchByte()), c.A)
 	case "C":
-		c.Bus.Write(0xFF00|uint16(c.C), c.A)
+		c.bus.Write(0xFF00|uint16(c.C), c.A)
 	case "A":
 		if op1.Name == "a8" {
-			c.A = c.Bus.Read(0xFF00 | uint16(c.fetchByte()))
+			c.A = c.bus.Read(0xFF00 | uint16(c.fetchByte()))
 		}
 
 		if op1.Name == "C" {
-			c.A = c.Bus.Read(0xFF00 | uint16(c.C))
+			c.A = c.bus.Read(0xFF00 | uint16(c.C))
 		}
 	default:
 		panic("unimplemented loadH for " + op0.Name)
@@ -222,9 +222,9 @@ func (c *CPU) inc(opc *Opcode) int {
 			c.setDOp(op0.Name, c.getDOp(op0.Name)+1)
 		} else {
 			addr := c.getDOp(op0.Name)
-			v := c.Bus.Read(addr)
+			v := c.bus.Read(addr)
 			res := v + 1
-			c.Bus.Write(addr, res)
+			c.bus.Write(addr, res)
 			c.setFlags(res == 0, false, v&0xF+1 > 0xF, c.getCF())
 		}
 	}
@@ -247,9 +247,9 @@ func (c *CPU) dec(opc *Opcode) int {
 			c.setDOp(op0.Name, c.getDOp(op0.Name)-1)
 		} else {
 			addr := c.getDOp(op0.Name)
-			v := c.Bus.Read(addr)
+			v := c.bus.Read(addr)
 			res := v - 1
-			c.Bus.Write(addr, res)
+			c.bus.Write(addr, res)
 			c.setFlags(res == 0, true, v&0xF < v&0xF-1, c.getCF())
 		}
 	}
@@ -538,7 +538,7 @@ func (c *CPU) halt(opc *Opcode) int {
 
 func (c *CPU) stop(opc *Opcode) int {
 	c.fetchByte()
-	c.Console.Stop()
+	c.console.Stop()
 
 	return opc.Cycles[0]
 }
@@ -722,15 +722,15 @@ func (c *CPU) bit(opc *Opcode) int {
 
 func (c *CPU) pushValue(value uint16) {
 	c.SP--
-	c.Bus.Write(c.SP, uint8(value>>8))
+	c.bus.Write(c.SP, uint8(value>>8))
 	c.SP--
-	c.Bus.Write(c.SP, uint8(value))
+	c.bus.Write(c.SP, uint8(value))
 }
 
 func (c *CPU) popValue() uint16 {
-	lo := c.Bus.Read(c.SP)
+	lo := c.bus.Read(c.SP)
 	c.SP++
-	hi := c.Bus.Read(c.SP)
+	hi := c.bus.Read(c.SP)
 	c.SP++
 
 	return uint16(hi)<<8 | uint16(lo)

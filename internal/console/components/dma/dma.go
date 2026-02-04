@@ -9,22 +9,27 @@ const (
 	DMA_BYTES = 0xA0
 )
 
-type bus interface {
+type Bus interface {
 	Read(addr uint16) uint8
 }
 
-type ppu interface {
+type PPU interface {
 	WriteOAM(addr uint16, value uint8)
 	ToggleDMAActive(active bool)
 }
 
 type DMA struct {
-	Bus bus
-	PPU ppu
+	bus Bus
+	ppu PPU
 
 	dma       uint8
 	dmaActive bool
 	nextByte  uint8
+}
+
+func (d *DMA) Init(bus Bus, ppu PPU) {
+	d.bus = bus
+	d.ppu = ppu
 }
 
 func (d *DMA) Step(cycles int) {
@@ -36,12 +41,12 @@ func (d *DMA) Step(cycles int) {
 		srcAddr := uint16(d.dma)<<8 | uint16(d.nextByte)
 		destAddr := 0xFE00 | uint16(d.nextByte)
 
-		d.PPU.WriteOAM(destAddr, d.Bus.Read(srcAddr))
+		d.ppu.WriteOAM(destAddr, d.bus.Read(srcAddr))
 		d.nextByte++
 
 		if d.nextByte == DMA_BYTES {
 			d.nextByte = 0
-			d.PPU.ToggleDMAActive(false)
+			d.ppu.ToggleDMAActive(false)
 			d.dmaActive = false
 
 			return
@@ -63,7 +68,7 @@ func (d *DMA) Write(addr uint16, value uint8) {
 	case DMA_ADDR:
 		d.dma = value
 		d.dmaActive = true
-		d.PPU.ToggleDMAActive(d.dmaActive)
+		d.ppu.ToggleDMAActive(d.dmaActive)
 	default:
 		panic(fmt.Errorf("unsupported write for dma: %x", addr))
 	}

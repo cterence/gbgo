@@ -17,17 +17,17 @@ const (
 	AXIS_TRIGGER  = 0.5
 )
 
-type console interface {
+type Console interface {
 	Shutdown()
 	Pause()
 	Reset()
 }
 
-type joypad interface {
+type Joypad interface {
 	UpdateButtons(a, b, right, left, up, down, selectB, start bool)
 }
 
-type ppu interface {
+type PPU interface {
 	GetFrame() [WIDTH][HEIGHT]uint8
 }
 
@@ -61,9 +61,9 @@ const (
 )
 
 type UI struct {
-	Console console
-	Joypad  joypad
-	PPU     ppu
+	console Console
+	joypad  Joypad
+	ppu     PPU
 
 	windowTitle string
 	pixels      []rl.Color
@@ -162,7 +162,11 @@ var palette = [4]rl.Color{
 // TODO: better system for choosing controller
 var gamepad = int32(1)
 
-func (ui *UI) Init(romPath string) {
+func (ui *UI) Init(console Console, joypad Joypad, ppu PPU, romPath string) {
+	ui.console = console
+	ui.joypad = joypad
+	ui.ppu = ppu
+
 	romFile := filepath.Base(romPath)
 	romTitle := strings.ReplaceAll(romFile, filepath.Ext(romFile), "")
 	ui.windowTitle = "gbgo - " + romTitle
@@ -183,7 +187,7 @@ func (ui *UI) Init(romPath string) {
 }
 
 func (ui *UI) DrawFrame() {
-	frameBuffer := ui.PPU.GetFrame()
+	frameBuffer := ui.ppu.GetFrame()
 
 	for y := range HEIGHT {
 		for x := range WIDTH {
@@ -221,7 +225,7 @@ func (ui *UI) DrawFrame() {
 
 func (ui *UI) HandleEvents() {
 	if rl.WindowShouldClose() {
-		ui.Console.Shutdown()
+		ui.console.Shutdown()
 	}
 
 	ui.updateButtonsState()
@@ -244,7 +248,7 @@ func (ui *UI) HandleEvents() {
 
 	if buttons[PAUSE].justPressed {
 		ui.paused = !ui.paused
-		ui.Console.Pause()
+		ui.console.Pause()
 
 		if ui.paused {
 			rl.SetWindowTitle(ui.windowTitle + " - PAUSED")
@@ -255,7 +259,7 @@ func (ui *UI) HandleEvents() {
 
 	if buttons[RESET].justPressed {
 		log.Debug("[ui] reset")
-		ui.Console.Reset()
+		ui.console.Reset()
 	}
 
 	ui.currentFPS = rl.GetFPS()
@@ -308,7 +312,7 @@ func (ui *UI) updateButtonsState() {
 	start := buttons[START].currentlyPressed
 	down := buttons[DOWN].currentlyPressed
 
-	ui.Joypad.UpdateButtons(a, b, right, left, up, down, selectB, start)
+	ui.joypad.UpdateButtons(a, b, right, left, up, down, selectB, start)
 }
 
 func (ui *UI) updateTitleFPS() {

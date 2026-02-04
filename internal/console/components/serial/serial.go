@@ -14,12 +14,12 @@ const (
 	INTERRUPT_CODE = 0x8
 )
 
-type cpu interface {
+type CPU interface {
 	RequestInterrupt(code uint8)
 }
 
 type Serial struct {
-	CPU cpu
+	cpu CPU
 
 	cycles int
 
@@ -37,7 +37,8 @@ func WithPrintSerial() Option {
 	}
 }
 
-func (s *Serial) Init(options ...Option) {
+func (s *Serial) Init(cpu CPU, options ...Option) {
+	s.cpu = cpu
 	s.sb = 0
 	s.sc = 0
 
@@ -60,7 +61,7 @@ func (s *Serial) Step(cycles int) {
 		s.sb = 0xFF
 		s.sc &= 0x7F
 		s.cycles = 0
-		s.CPU.RequestInterrupt(INTERRUPT_CODE)
+		s.cpu.RequestInterrupt(INTERRUPT_CODE)
 	}
 }
 

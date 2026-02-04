@@ -8,23 +8,23 @@ import (
 	"github.com/cterence/gbgo/internal/lib"
 )
 
-type bus interface {
+type Bus interface {
 	Read(addr uint16) uint8
 	Write(addr uint16, value uint8)
 }
 
-type console interface {
+type Console interface {
 	Stop()
 }
 
-type debugger interface {
+type Debugger interface {
 	Push(trace string)
 }
 
 type CPU struct {
-	Bus      bus
-	Console  console
-	Debugger debugger
+	bus      Bus
+	console  Console
+	debugger Debugger
 	state
 }
 
@@ -77,10 +77,10 @@ func WithBootROM() Option {
 
 func (c *CPU) String() string {
 	return fmt.Sprintf("%04x: %02x %02x %02x  A:%02x F:%02x B:%02x C:%02x D:%02x E:%02x H:%02x L:%02x SP:%04x",
-		c.PC, c.Bus.Read(c.PC), c.Bus.Read(c.PC+1), c.Bus.Read(c.PC+2), c.A, c.F, c.B, c.C, c.D, c.E, c.H, c.L, c.SP)
+		c.PC, c.bus.Read(c.PC), c.bus.Read(c.PC+1), c.bus.Read(c.PC+2), c.A, c.F, c.B, c.C, c.D, c.E, c.H, c.L, c.SP)
 }
 
-func (c *CPU) Init(options ...Option) {
+func (c *CPU) Init(b Bus, con Console, d Debugger, options ...Option) {
 	for _, o := range options {
 		o(c)
 	}
@@ -91,6 +91,9 @@ func (c *CPU) Init(options ...Option) {
 
 	c.bindOpcodeFuncs()
 
+	c.bus = b
+	c.console = con
+	c.debugger = d
 	c.PC = 0x0100
 	c.SP = 0xFFFE
 	c.A = 0x01
@@ -139,7 +142,7 @@ func (c *CPU) Step() int {
 	}
 
 	if c.Debug {
-		c.Debugger.Push(c.String())
+		c.debugger.Push(c.String())
 	}
 
 	opcode := c.getOpcode()
@@ -195,7 +198,7 @@ func (c *CPU) Save(buf *bytes.Buffer) {
 }
 
 func (c *CPU) fetchByte() uint8 {
-	val := c.Bus.Read(c.PC)
+	val := c.bus.Read(c.PC)
 
 	if c.HaltBug {
 		c.HaltBug = false
@@ -246,7 +249,7 @@ func (c *CPU) getOp(op string) uint8 {
 	case "n8":
 		return c.fetchByte()
 	case "HL":
-		return c.Bus.Read(uint16(c.H)<<8 | uint16(c.L))
+		return c.bus.Read(uint16(c.H)<<8 | uint16(c.L))
 	default:
 		panic("unsupported operand for getOp: " + op)
 	}
@@ -271,7 +274,7 @@ func (c *CPU) setOp(op string, value uint8) {
 	case "L":
 		c.L = value
 	case "HL":
-		c.Bus.Write(uint16(c.H)<<8|uint16(c.L), value)
+		c.bus.Write(uint16(c.H)<<8|uint16(c.L), value)
 	default:
 		panic("unsupported operand for setOp: " + op)
 	}
