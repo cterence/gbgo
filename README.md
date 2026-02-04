@@ -18,7 +18,8 @@ A Game Boy emulator written in Golang.
 - [x] Save state
 - [x] Trace ring buffer
 - [x] CPU debug to file with goroutines
-- [ ] Fix state restore PPU buggy on dmg-acid2
+- [x] Fix state restore PPU buggy on dmg-acid2
+- [ ] Fix buggy objects on left of the screen
 - [ ] Window with tile data
 - [ ] Debug overlay
 - [ ] Runtime assertions
