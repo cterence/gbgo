@@ -169,12 +169,12 @@ func Run(romBytes []uint8, romPath, stateDir string, options ...Option) error {
 func (gb *console) Reset() {
 	gb.cpu.Init(gb.bus, gb, gb.debugger, gb.cpuOptions...)
 	gb.memory.Init()
-	gb.bus.Init(gb.memory, gb.cartridge, gb.cpu, gb.timer, gb.ppu, gb.serial, gb.dma, gb.joypad, gb.busOptions...)
 	gb.timer.Init(gb.cpu)
 	gb.ppu.Init(gb.bus, gb.cpu)
 	gb.serial.Init(gb.cpu, gb.serialOptions...)
 	gb.dma.Init(gb.bus, gb.ppu)
 	gb.joypad.Init(gb.cpu)
+	gb.bus.Init(gb.memory, gb.cartridge, gb.cpu, gb.timer, gb.ppu, gb.serial, gb.dma, gb.joypad, gb.busOptions...)
 
 	if gb.debug {
 		gb.debugger.Init(os.Stdout)

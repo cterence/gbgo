@@ -153,7 +153,7 @@ func (p *PPU) fetchObjPixels() {
 }
 
 func (p *PPU) pushPixelToLCD() {
-	if p.DiscardedPixels < p.SCX%8 {
+	if !p.WindowTriggered && p.DiscardedPixels < p.SCX%8 {
 		p.BackgroundFIFO.Pop()
 		p.ObjectFIFO.Pop()
 		p.DiscardedPixels++
