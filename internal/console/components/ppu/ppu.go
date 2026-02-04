@@ -188,11 +188,8 @@ func (p *PPU) Init() {
 	p.OAM = [OAM_SIZE]uint8{}
 	p.Objects = [10]object{}
 	p.FrameReady = false
-
 	p.BackgroundFIFO.Init(PIXEL_FIFO_SIZE)
 	p.ObjectFIFO.Init(PIXEL_FIFO_SIZE)
-
-	p.PPUMode = OAM_SCAN
 }
 
 func (p *PPU) Read(addr uint16) uint8 {

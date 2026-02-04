@@ -125,6 +125,10 @@ func (p *PPU) fetchObjPixels() {
 		hiPx := (tileHi >> pixelIdx) & 0x1
 		colorIdx := hiPx<<1 | loPx
 
+		if colorIdx == 0 {
+			continue
+		}
+
 		newPixel := pixel{
 			Transparent: colorIdx == 0,
 			Color:       (obp >> (colorIdx * 2)) & 0x3,
@@ -133,6 +137,10 @@ func (p *PPU) fetchObjPixels() {
 
 		fifoIdx := px - startPixel
 		if fifoIdx >= p.ObjectFIFO.GetCount() {
+			for p.ObjectFIFO.GetCount() < fifoIdx {
+				p.ObjectFIFO.Push(pixel{Transparent: true})
+			}
+
 			p.ObjectFIFO.Push(newPixel)
 		} else {
 			if p.ObjectFIFO.Peek(fifoIdx).Transparent {
