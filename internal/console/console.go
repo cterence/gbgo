@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cterence/gbgo/internal/console/components/apu"
 	"github.com/cterence/gbgo/internal/console/components/bus"
 	"github.com/cterence/gbgo/internal/console/components/cartridge"
 	"github.com/cterence/gbgo/internal/console/components/cpu"
@@ -44,6 +45,7 @@ type console struct {
 	serial    *serial.Serial
 	dma       *dma.DMA
 	debugger  *debugger.Debugger
+	apu       *apu.APU
 
 	romPath  string
 	stateDir string
@@ -109,6 +111,7 @@ func Run(romBytes []uint8, romPath, stateDir string, options ...Option) error {
 		serial:    &serial.Serial{},
 		dma:       &dma.DMA{},
 		debugger:  &debugger.Debugger{},
+		apu:       &apu.APU{},
 	}
 
 	for _, o := range options {
@@ -149,6 +152,7 @@ func Run(romBytes []uint8, romPath, stateDir string, options ...Option) error {
 
 			gb.serial.Step(cycles)
 			gb.dma.Step(cycles)
+			gb.apu.Step(cycles)
 
 			for range cycles / 2 {
 				gb.ppu.Step(2)
@@ -174,7 +178,8 @@ func (gb *console) Reset() {
 	gb.serial.Init(gb.cpu, gb.serialOptions...)
 	gb.dma.Init(gb.bus, gb.ppu)
 	gb.joypad.Init(gb.cpu)
-	gb.bus.Init(gb.memory, gb.cartridge, gb.cpu, gb.timer, gb.ppu, gb.serial, gb.dma, gb.joypad, gb.busOptions...)
+	gb.bus.Init(gb.memory, gb.cartridge, gb.cpu, gb.timer, gb.ppu, gb.serial, gb.dma, gb.joypad, gb.apu, gb.busOptions...)
+	gb.apu.Init()
 
 	if gb.debug {
 		gb.debugger.Init(os.Stdout)

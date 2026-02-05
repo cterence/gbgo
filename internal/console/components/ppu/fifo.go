@@ -1,5 +1,7 @@
 package ppu
 
+import "github.com/cterence/gbgo/internal/lib"
+
 const (
 	X_OFFSET        = 8
 	Y_OFFSET        = 16
@@ -25,7 +27,7 @@ func (p *PPU) fetchBGWPixels() {
 		tileRow       uint16
 	)
 
-	tileMapSelector := btou8(p.BGTileMap)
+	tileMapSelector := lib.BToU8(p.BGTileMap)
 
 	// Check if we should be fetching a window pixel
 	if !p.WindowTriggered && p.WindowEnabled && p.WX <= 166 && p.LY >= p.WY && p.FetchedX+7 >= p.WX {
@@ -34,7 +36,7 @@ func (p *PPU) fetchBGWPixels() {
 	}
 
 	if p.WindowTriggered {
-		tileMapSelector = btou8(p.WindowTileMap)
+		tileMapSelector = lib.BToU8(p.WindowTileMap)
 		windowX := (p.FetchedX + 7 - p.WX) / 8
 		tileMapOffset = uint16(windowX) + 32*(uint16(p.WindowLineCounter)/8)
 		tileRow = uint16(p.WindowLineCounter) % 8

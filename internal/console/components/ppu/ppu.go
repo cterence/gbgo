@@ -450,14 +450,14 @@ func (p *PPU) scanOAM() {
 func (p *PPU) readLCDC() uint8 {
 	var value uint8
 
-	value |= btou8(p.PPUEnabled) << 7
-	value |= btou8(p.WindowTileMap) << 6
-	value |= btou8(p.WindowEnabled) << 5
-	value |= btou8(p.BGWTileData) << 4
-	value |= btou8(p.BGTileMap) << 3
-	value |= btou8(p.ObjSize) << 2
-	value |= btou8(p.ObjEnabled) << 1
-	value |= btou8(p.BGWEnabled)
+	value |= lib.BToU8(p.PPUEnabled) << 7
+	value |= lib.BToU8(p.WindowTileMap) << 6
+	value |= lib.BToU8(p.WindowEnabled) << 5
+	value |= lib.BToU8(p.BGWTileData) << 4
+	value |= lib.BToU8(p.BGTileMap) << 3
+	value |= lib.BToU8(p.ObjSize) << 2
+	value |= lib.BToU8(p.ObjEnabled) << 1
+	value |= lib.BToU8(p.BGWEnabled)
 
 	return value
 }
@@ -476,11 +476,11 @@ func (p *PPU) setLCDC(value uint8) {
 func (p *PPU) readSTAT() uint8 {
 	var value uint8
 
-	value |= btou8(p.LYCInt) << 6
-	value |= btou8(p.OAMInt) << 5
-	value |= btou8(p.VBlankInt) << 4
-	value |= btou8(p.HBlankInt) << 3
-	value |= btou8(p.LYCEqLy) << 2
+	value |= lib.BToU8(p.LYCInt) << 6
+	value |= lib.BToU8(p.OAMInt) << 5
+	value |= lib.BToU8(p.VBlankInt) << 4
+	value |= lib.BToU8(p.HBlankInt) << 3
+	value |= lib.BToU8(p.LYCEqLy) << 2
 	value |= uint8(p.PPUMode)
 
 	return value
@@ -491,14 +491,6 @@ func (p *PPU) setSTAT(value uint8) {
 	p.OAMInt = value&0x20 != 0
 	p.VBlankInt = value&0x10 != 0
 	p.HBlankInt = value&0x08 != 0
-}
-
-func btou8(b bool) uint8 {
-	if b {
-		return 1
-	}
-
-	return 0
 }
 
 func (p *PPU) checkLYC() {

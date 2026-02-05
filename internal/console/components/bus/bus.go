@@ -47,6 +47,7 @@ type Bus struct {
 	serial    RW
 	dma       RW
 	joypad    RW
+	apu       RW
 
 	bootROM     []uint8
 	hideBootROM uint8
@@ -61,7 +62,7 @@ func WithBootROM(bootRom []uint8) Option {
 	}
 }
 
-func (b *Bus) Init(memory RW, cartridge RW, cpu RW, timer RW, ppu RW, serial RW, dma RW, joypad RW, options ...Option) {
+func (b *Bus) Init(memory RW, cartridge RW, cpu RW, timer RW, ppu RW, serial RW, dma RW, joypad RW, apu RW, options ...Option) {
 	for _, o := range options {
 		o(b)
 	}
@@ -74,6 +75,7 @@ func (b *Bus) Init(memory RW, cartridge RW, cpu RW, timer RW, ppu RW, serial RW,
 	b.serial = serial
 	b.dma = dma
 	b.joypad = joypad
+	b.apu = apu
 
 	if len(b.bootROM) == 0 {
 		b.hideBootROM = 1
@@ -135,9 +137,8 @@ func (b *Bus) Read(addr uint16) uint8 {
 		return 0xFF
 	case addr == 0xFF00:
 		return b.joypad.Read(addr)
-	// TODO: apu
 	case addr >= 0xFF10 && addr <= 0xFF3F:
-		return 0xFF
+		return b.apu.Read(addr)
 	default:
 		return 0xFF
 	}
@@ -166,8 +167,8 @@ func (b *Bus) Write(addr uint16, value uint8) {
 	case addr >= UNUSED_START && addr <= UNUSED_END:
 	case addr == 0xFF00:
 		b.joypad.Write(addr, value)
-	// TODO: apu
 	case addr >= 0xFF10 && addr <= 0xFF3F:
+		b.apu.Write(addr, value)
 	default:
 	}
 }

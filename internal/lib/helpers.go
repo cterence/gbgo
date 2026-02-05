@@ -63,3 +63,11 @@ func (f *FIFO[T]) Clear() {
 func (f *FIFO[T]) GetCount() int {
 	return f.Count
 }
+
+func BToU8(b bool) uint8 {
+	if b {
+		return 1
+	}
+
+	return 0
+}
