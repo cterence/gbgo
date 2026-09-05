@@ -40,7 +40,7 @@ jobs:
 
       - name: Set up QEMU
         if: matrix.qemu
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4
         with:
           platforms: arm64
 
